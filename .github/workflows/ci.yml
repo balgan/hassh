@@ -8,18 +8,18 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
+    # Official images rather than setup-python: the hosted runners no longer
+    # offer every interpreter we support (3.9 is gone from ubuntu-latest).
+    container: python:${{ matrix.python-version }}-slim
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.11", "3.13"]
+        python-version: ["3.9", "3.11", "3.13", "3.14"]
     defaults:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - uses: actions/checkout@v5
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: ruff format --check .
@@ -29,6 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     container: zeek/zeek:lts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Script parses and loads
         run: zeek -a ./zeek
