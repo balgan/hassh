@@ -1,0 +1,16 @@
+# Fedora, CentOS, Rocky, Alma, Oracle, Amazon Linux, UBI, openSUSE
+ARG IMAGE=fedora
+ARG IMAGE_VER=latest
+FROM $IMAGE:$IMAGE_VER
+ARG PACKAGES
+# CentOS releases that reached end of life live on vault.centos.org (slow).
+RUN if grep -qs '^mirrorlist=.*centos.org' /etc/yum.repos.d/CentOS-*.repo; then \
+        sed -i -E -e 's|^mirrorlist=|#mirrorlist=|' \
+               -e 's|^#[[:space:]]*baseurl=http://mirror.centos.org/|baseurl=https://vault.centos.org/|' \
+               /etc/yum.repos.d/CentOS-*.repo; \
+        if grep -q 'release 7' /etc/centos-release; then echo 7.9.2009 > /etc/yum/vars/releasever; fi; \
+    fi; \
+    if command -v zypper >/dev/null; then zypper -n install $PACKAGES >/dev/null; \
+    elif command -v dnf >/dev/null; then dnf -y -q install $PACKAGES && dnf clean all; \
+    elif command -v microdnf >/dev/null; then microdnf -y install $PACKAGES; \
+    else yum -y -q install $PACKAGES && yum clean all; fi

@@ -1,0 +1,8 @@
+# https://hub.docker.com/_/python/
+ARG IMAGE=python
+ARG IMAGE_VER=3.12-slim
+FROM $IMAGE:$IMAGE_VER
+ARG VERSION
+ARG EXTRA_PIP=""
+RUN pip install --no-cache-dir --quiet paramiko==$VERSION $EXTRA_PIP
+COPY paramiko_conn.py paramiko_server.py /opt/

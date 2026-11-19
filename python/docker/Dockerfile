@@ -4,24 +4,22 @@
 # For full license text, see the LICENSE file in the repo root
 # or https://opensource.org/licenses/BSD-3-Clause
 #
-# A dockerized version of hassh.py can be used to extract HASSH fingerprints from input PCAP files and live network traffic.
-#
-# Build the docker image using Dockerfile:
-#   $ docker build -t hassh:latest .
-# - Reading from input PCAP files:
-#    You can mount your host ~/pcap dir to copy pcap files to the container and also keep the logs on your host:
-#      $ docker run -v ~/pcap:/tmp/ -it hassh:latest -d /tmp/ -l json -o /tmp/log.json
-# - Live network traffic capture:
-#      $ docker run --net=host -it hassh:latest -i any --print
-# Note: According to Docker's docs, the host networking driver only works on Linux hosts, and is not supported on Docker for Mac, Docker for Windows, or Docker EE for Windows Server.
+# A dockerized hassh. Build from the python/ directory of the repository:
+#   $ docker build -t hassh:latest -f docker/Dockerfile .
+# - Reading capture files (mount a directory holding them):
+#   $ docker run --rm -v ~/pcap:/data hassh:latest -d /data -l json -o /data/hassh.json
+# - Fingerprinting a server:
+#   $ docker run --rm hassh:latest --probe example.org:22
+# - Live capture (Linux hosts only, see https://docs.docker.com/network/host/):
+#   $ docker run --rm --net=host --cap-add=NET_RAW hassh:latest -i any -p
 
-FROM alpine:latest
-MAINTAINER Adel Karimi (@0x4d31)
-ENV DEBIAN_FRONTEND noninteractive
-RUN apk --no-cache add python3 gcc \
-    py3-pip py3-lxml tshark \
-    && pip3 install pyshark
+FROM python:3.13-alpine
+LABEL org.opencontainers.image.title="hassh" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+RUN apk --no-cache add tcpdump
 WORKDIR /opt/hassh
-ADD https://raw.githubusercontent.com/salesforce/hassh/master/python/hassh.py .
-ENTRYPOINT ["python3","hassh.py"]
+COPY hassh ./hassh
+COPY hasshGen/hassh_fingerprints.json hasshGen/hasshserver_fingerprints.json ./hassh/data/
+ENV PYTHONPATH=/opt/hassh PYTHONUNBUFFERED=1
+ENTRYPOINT ["python3", "-m", "hassh"]
 CMD ["-h"]

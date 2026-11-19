@@ -1,0 +1,6 @@
+# The collector: probes servers under test and listens for clients under test.
+# Build context is the python/ directory of this repository.
+FROM python:3.13-alpine
+COPY hassh /opt/hassh/hassh
+ENV PYTHONPATH=/opt/hassh PYTHONUNBUFFERED=1
+ENTRYPOINT ["python3", "-m", "hassh"]

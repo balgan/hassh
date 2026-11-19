@@ -8,7 +8,11 @@
 
 "HASSH" is a network fingerprinting standard which can be used to identify specific Client and Server SSH implementations. The fingerprints can be easily stored, searched and shared in the form of an MD5 fingerprint.
 
-HASSH was invented at Salesforce in 2018. However, the project is no longer being actively maintained by Salesforce. Its original creator, Ben Reardon maintains the active fork at [Corelight](https://github.com/corelight/hassh)
+HASSH was invented at Salesforce in 2018. Salesforce archived its repository in 2025; this fork brings the project back to life:
+
+- the [Python tool](python/) was rewritten without dependencies and can now also fingerprint servers actively (`--probe`) and clients passively (`--listen`),
+- the [fingerprint database](python/hasshGen/) was regenerated for the SSH software released since 2018 and, for the first time, includes server fingerprints (`hasshServer`), checked against internet-wide scan data,
+- the [Zeek package](zeek/) was updated for current Zeek releases.
 
 [![License: BSD 3-Clause License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 ## What can HASSH help with:
@@ -69,6 +73,15 @@ Finally the hasshServer is simply the MD5 of hasshServerAlgorithms, some example
 ```d93f46d063c4382b6232a4d77db532b2``` SSH-2.0-dropbear_2016.72	  
 ```2dd9a9b3dbebfaeec8b8aabd689e75d2``` SSH-2.0-AWSCodeCommit  
 ```696e7f84ac571fdf8fa5073e64ee2dc8``` SSH-2.0-FTP   
+
+## Quick start
+```
+$ python3 python/hassh.py --probe test.example.org        # hasshServer of a server
+$ python3 python/hassh.py --listen 2222                   # hassh of whoever connects
+$ python3 python/hassh.py -r capture.pcap -l json -o -    # both, from a capture file
+$ zkg install hassh                                       # Zeek: adds hassh fields to ssh.log
+```
+Known fingerprints are in [python/hasshGen](python/hasshGen/): [clients](python/hasshGen/hassh_fingerprints.csv) and [servers](python/hasshGen/hasshserver_fingerprints.csv).
 
 ## References:
 - [RFC4253 The Secure Shell (SSH) Transport Layer Protocol](https://www.ietf.org/rfc/rfc4253.txt)
