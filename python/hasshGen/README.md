@@ -8,7 +8,8 @@ fingerprints. The results are the databases in this directory:
 | file | content |
 |---|---|
 | [hassh_fingerprints.json](hassh_fingerprints.json) / [.csv](hassh_fingerprints.csv) | client fingerprints (`hassh`) |
-| [hasshserver_fingerprints.json](hasshserver_fingerprints.json) / [.csv](hasshserver_fingerprints.csv) | server fingerprints (`hasshServer`) |
+| [hasshserver_fingerprints.json](hasshserver_fingerprints.json) / [.csv](hasshserver_fingerprints.csv) | server fingerprints (`hasshServer`) built in the lab |
+| [hasshserver_observed.json](hasshserver_observed.json) / [.csv](hasshserver_observed.csv) | server fingerprints only known from internet scans, see [below](#observed-fingerprints) |
 
 The JSON files hold one object per line with every KEXINIT name-list; the CSV
 files are the short form.
@@ -17,22 +18,31 @@ files are the short form.
 
 Listed in [targets.json](targets.json):
 
-* **OpenSSH portable** built from every upstream release tarball, 7.9p1 to 10.6p2
+* **OpenSSH portable** built from every upstream release tarball, 5.3p1 to 10.6p2
 * **Dropbear** built from every upstream release tarball, 2019.77 to 2026.94
 * **Paramiko** 2.4.2 to 5.1.0 from PyPI, as client and as server
 * **Distribution packages** of OpenSSH and Dropbear on Alpine, Debian, Ubuntu,
   Fedora, CentOS, Rocky, Alma, Oracle and Amazon Linux, Red Hat UBI and
-  openSUSE. Distributions change the algorithm lists (Red Hat's crypto
-  policies most of all), so their fingerprints differ from upstream's for
-  the same version number.
+  openSUSE, including releases long past end of life (CentOS 6, Debian 6
+  to 9, Ubuntu 12.04 to 16.04) because plenty of them are still online.
+  Distributions change the algorithm lists (Red Hat's crypto policies most
+  of all), so their fingerprints differ from upstream's for the same
+  version number.
+* **OpenWrt** 14.07 to 25.12: Dropbear as built for the firmware images,
+  taken from the published root filesystems.
+* **Hardening profiles** ([profiles.json](profiles.json)): the widely copied
+  `KexAlgorithms` / `Ciphers` / `MACs` recommendations (Mozilla, ssh-audit,
+  "Secure Secure Shell", CIS) applied to the distribution packages. These
+  rows carry the profile name in `configuration`.
 
-Rows from the original 2018 database (OpenSSH 5.3 to 7.8, Paramiko 1.13 to
-2.4.1, Dropbear 2012.55 to 2018.76) are kept as they were.
+Client rows from the original 2018 database (Paramiko 1.13 to 2.4.1,
+Dropbear 2012.55 to 2018.76, ...) are kept as they were.
 
-Source builds use default `configure` options and every server runs its
-default configuration: a fingerprint identifies a build *and* its
-configuration, so a host with hardened `KexAlgorithms`/`Ciphers`/`MACs`
-will not match.
+Source builds use default `configure` options. A fingerprint identifies a
+build *and* its configuration: apart from the hardening profiles every
+server runs as installed, and a host with its own `KexAlgorithms` /
+`Ciphers` / `MACs` only matches if somebody else made the same edit and it
+ended up in the observed database.
 
 ## How it works
 
@@ -77,6 +87,10 @@ stopped (`--force` re-runs). Images are deleted as soon as a target is done,
 base images that were pulled for the run included, and the build cache is
 pruned along the way; `--keep-images` turns that off.
 
+Images that only exist for another CPU architecture (`"platform"` in the
+target, e.g. CentOS 6 or the OpenSSH 5.x and 6.x source builds, whose
+`configure` predates arm64) run emulated.
+
 ### Adding a version
 
 Append a line to [targets.json](targets.json):
@@ -90,6 +104,41 @@ Package recipes install whatever version the release currently ships and
 record it. For another SSH implementation add a recipe to `RECIPES` in
 `hasshgen.py`: a Dockerfile plus the shell commands that start its server and
 its client.
+
+### Hardening profiles
+
+A target can list `"profiles"`: after the default run the same image is
+started once per profile with its `KexAlgorithms`, `Ciphers` and `MACs` on
+the sshd command line. A server that does not know one of the algorithms
+refuses to start, exactly as it would for an administrator, and that
+combination is skipped. Add a profile to [profiles.json](profiles.json)
+with the URL it was taken from.
+
+## Observed fingerprints
+
+No lab reaches everything that answers on port 22: routers and switches,
+vendor firmware, Windows and BSD builds, and every hand-edited
+`sshd_config`. `harvest.py` fills that gap from scan data. It takes
+observations grouped by identification string and fingerprint and writes
+every fingerprint the lab database does not have to
+`hasshserver_observed.json`, labelled with the identification strings of
+the hosts presenting it:
+
+```
+$ python3 harvest.py observations.json
+```
+
+`observations.json` is a JSON array of
+`{"day": ..., "banner": ..., "hassh_server": ..., "algos": ..., "ips": ..., "nets": ...}`.
+A fingerprint is taken when at least 20 hosts present it in every scan of
+the file; an identification string is only attached to it when it was seen
+on at least 10 distinct networks, so a banner one organisation made up for
+itself is never published. No host counts are written, only a `prevalence`
+class (`common`: at least 0.1% of scanned hosts, `uncommon`: at least 0.01%,
+`rare`). These rows say what hosts *claim* to be: unlike the lab rows nobody
+built the software to check.
+
+The `hassh` tool consults both files and marks these matches `(observed)`.
 
 ## Validating against real-world data
 
