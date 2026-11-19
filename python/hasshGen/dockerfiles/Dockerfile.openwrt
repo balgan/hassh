@@ -1,0 +1,14 @@
+# OpenWrt root filesystem as published for each release (x86/64). Dropbear is
+# part of the default image, built with OpenWrt's own compile-time options.
+FROM --platform=$BUILDPLATFORM alpine:3 AS rootfs
+ARG IMAGE_VER
+RUN set -e; mkdir /rootfs; \
+    for base in https://downloads.openwrt.org https://archive.openwrt.org; do \
+        for dir in releases/$IMAGE_VER/targets/x86/64 chaos_calmer/$IMAGE_VER/x86/64 barrier_breaker/$IMAGE_VER/x86/generic; do \
+            file=$(wget -qO- $base/$dir/ 2>/dev/null | grep -o '[A-Za-z0-9._-]*rootfs\.tar\.gz' | grep -v -e combined -e squashfs | head -n1) || true; \
+            if [ -n "$file" ]; then wget -qO- $base/$dir/$file | tar xz -C /rootfs; exit 0; fi; \
+        done; \
+    done; echo "no rootfs archive for OpenWrt $IMAGE_VER" >&2; exit 1
+
+FROM scratch
+COPY --from=rootfs /rootfs /

@@ -9,6 +9,7 @@ RUN if grep -qs '^mirrorlist=.*centos.org' /etc/yum.repos.d/CentOS-*.repo; then 
                -e 's|^#[[:space:]]*baseurl=http://mirror.centos.org/|baseurl=https://vault.centos.org/|' \
                /etc/yum.repos.d/CentOS-*.repo; \
         if grep -q 'release 7' /etc/centos-release; then echo 7.9.2009 > /etc/yum/vars/releasever; fi; \
+        if grep -q 'release 6' /etc/centos-release; then echo 6.10 > /etc/yum/vars/releasever; fi; \
     fi; \
     if command -v zypper >/dev/null; then zypper -n install $PACKAGES >/dev/null; \
     elif command -v dnf >/dev/null; then dnf -y -q install $PACKAGES && dnf clean all; \

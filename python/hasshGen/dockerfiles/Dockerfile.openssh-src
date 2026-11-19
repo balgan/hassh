@@ -1,16 +1,25 @@
 # OpenSSH portable built from the upstream release tarball.
-# Releases before 9.0 need OpenSSL 1.1.1: build those with IMAGE=ubuntu IMAGE_VER=20.04.
+#   9.0 and later : IMAGE=debian IMAGE_VER=bookworm-slim (OpenSSL 3)
+#   7.9 to 8.9    : IMAGE=ubuntu IMAGE_VER=20.04         (OpenSSL 1.1.1)
+#   5.3 to 7.8    : IMAGE=ubuntu IMAGE_VER=14.04         (OpenSSL 1.0.1), built
+#                   for linux/amd64: their configure predates aarch64
 ARG IMAGE=debian
 ARG IMAGE_VER=bookworm-slim
+
+# Fetched in a current image: the old ones no longer trust today's certificates.
+FROM --platform=$BUILDPLATFORM alpine:3 AS source
+ARG VERSION
+RUN mkdir /src && wget -qO- https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$VERSION.tar.gz \
+    | tar xz --strip-components=1 -C /src
+
 FROM $IMAGE:$IMAGE_VER
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc libc6-dev make ca-certificates curl libssl-dev zlib1g-dev \
+RUN apt-get update >/dev/null && apt-get install -y --no-install-recommends \
+        gcc libc6-dev make libssl-dev zlib1g-dev >/dev/null \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -r -d /var/empty -s /usr/sbin/nologin sshd && mkdir -p /var/empty
-ARG VERSION
-RUN mkdir -p /usr/src/build && curl -fsSL https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$VERSION.tar.gz | tar xz --strip-components=1 -C /usr/src/build \
- && cd /usr/src/build \
+COPY --from=source /src /usr/src/build
+RUN cd /usr/src/build \
  && ./configure --prefix=/opt/openssh --sysconfdir=/opt/openssh/etc --with-privsep-path=/var/empty >/dev/null \
- && make -j"$(nproc)" >/dev/null && make install >/dev/null \
+ && make -j"$(nproc)" >/dev/null 2>&1 && make install >/dev/null 2>&1 \
  && cd / && rm -rf /usr/src/build
 ENV PATH=/opt/openssh/bin:/opt/openssh/sbin:$PATH

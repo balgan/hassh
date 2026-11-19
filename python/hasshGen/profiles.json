@@ -1,0 +1,92 @@
+{
+ "mozilla-modern": {
+  "description": "Mozilla OpenSSH guideline, modern (OpenSSH 6.7+)",
+  "source": "https://infosec.mozilla.org/guidelines/openssh",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com"
+  }
+ },
+ "mozilla-intermediate": {
+  "description": "Mozilla OpenSSH guideline, intermediate (OpenSSH 5.3)",
+  "source": "https://infosec.mozilla.org/guidelines/openssh",
+  "options": {
+   "KexAlgorithms": "diffie-hellman-group-exchange-sha256",
+   "Ciphers": "aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512,hmac-sha2-256"
+  }
+ },
+ "secure-secure-shell": {
+  "description": "stribika, Secure Secure Shell",
+  "source": "https://stribika.github.io/2015/01/04/secure-secure-shell.html",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com"
+  }
+ },
+ "cis-benchmark": {
+  "description": "CIS Linux benchmarks, sshd Ciphers / MACs / KexAlgorithms recommendations",
+  "source": "https://www.cisecurity.org/cis-benchmarks",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256"
+  }
+ },
+ "ssh-audit-ubuntu-24.04": {
+  "description": "ssh-audit hardening guide, Ubuntu 24.04",
+  "source": "https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "sntrup761x25519-sha512@openssh.com,gss-curve25519-sha256-,curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256,gss-group16-sha512-,diffie-hellman-group16-sha512",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-gcm@openssh.com,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ },
+ "ssh-audit-ubuntu-22.04": {
+  "description": "ssh-audit hardening guide, Ubuntu 22.04 (also Rocky 9, Amazon Linux 2023)",
+  "source": "https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,gss-curve25519-sha256-,diffie-hellman-group16-sha512,gss-group16-sha512-,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-gcm@openssh.com,aes128-ctr",
+   "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ },
+ "ssh-audit-debian-12": {
+  "description": "ssh-audit hardening guide, Debian 12",
+  "source": "https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,gss-curve25519-sha256-,diffie-hellman-group16-sha512,gss-group16-sha512-,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-gcm@openssh.com,aes128-ctr",
+   "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ },
+ "ssh-audit-ubuntu-20.04": {
+  "description": "ssh-audit hardening guide, Ubuntu 18.04 / 20.04 (also Debian 10 / 11, RHEL 8)",
+  "source": "https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ },
+ "ssh-audit-rhel-7": {
+  "description": "ssh-audit hardening guide, RHEL / CentOS 7",
+  "source": "https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ },
+ "ssh-audit-ubuntu-16.04": {
+  "description": "ssh-audit hardening guide, Ubuntu 14.04 / 16.04",
+  "source": "https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ }
+}

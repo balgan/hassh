@@ -6,6 +6,7 @@ import io
 import json
 import socket
 import struct
+import sys
 import threading
 from pathlib import Path
 
@@ -205,7 +206,11 @@ def test_probe_and_listen_roundtrip():
 
 def test_database_files_are_consistent():
     """Every row's fingerprint is the MD5 of its algorithm string."""
-    for name, fp in (("hassh_fingerprints", "hassh"), ("hasshserver_fingerprints", "hasshServer")):
+    for name, fp in (
+        ("hassh_fingerprints", "hassh"),
+        ("hasshserver_fingerprints", "hasshServer"),
+        ("hasshserver_observed", "hasshServer"),
+    ):
         path = REPO / "python" / "hasshGen" / f"{name}.json"
         if not path.exists():
             continue
@@ -213,6 +218,55 @@ def test_database_files_are_consistent():
         assert rows
         for row in rows:
             assert hassh_digest(row[fp + "Algorithms"]) == row[fp], row
+
+
+def test_lab_and_observed_databases_do_not_overlap():
+    gen = REPO / "python" / "hasshGen"
+    if not (gen / "hasshserver_observed.json").exists():
+        pytest.skip("no observed database")
+    lab = {json.loads(line)["hasshServer"] for line in (gen / "hasshserver_fingerprints.json").read_text().splitlines()}
+    observed = [json.loads(line) for line in (gen / "hasshserver_observed.json").read_text().splitlines()]
+    assert observed and not lab & {row["hasshServer"] for row in observed}
+    assert all(row["source"] == "observed" and row["serverIdentificationString"] for row in observed)
+
+
+def test_lookup_labels_profiles_and_observed():
+    from hassh import db
+
+    gen = REPO / "python" / "hasshGen"
+    if not (gen / "hasshserver_observed.json").exists():
+        pytest.skip("no observed database")
+    rows = [json.loads(line) for line in (gen / "hasshserver_fingerprints.json").read_text().splitlines()]
+    profiled = next(row for row in rows if row.get("configuration"))
+    assert any(
+        name.endswith(f"[{profiled['configuration']}]") for name in db.lookup(profiled["hasshServer"], server=True)
+    )
+    observed = json.loads((gen / "hasshserver_observed.json").read_text().splitlines()[0])
+    assert db.lookup(observed["hasshServer"], server=True)[0] == observed["serverIdentificationString"] + " (observed)"
+
+
+def test_harvest_publishes_only_widespread_banners():
+    sys.path.insert(0, str(REPO / "python" / "hasshGen"))
+    from harvest import harvest
+
+    algos = {name: f"kex-{name};aes128-ctr;hmac-sha2-256;none" for name in "abcd"}
+    fp = {name: hassh_digest(value) for name, value in algos.items()}
+
+    def row(name, banner, ips, nets, day="d2"):
+        return {"day": day, "banner": banner, "hassh_server": fp[name], "algos": algos[name], "ips": ips, "nets": nets}
+
+    rows = [
+        row("a", "SSH-2.0-Lab_1", 5000, 900), row("a", "SSH-2.0-Lab_1", 5000, 900, "d1"),  # already in the lab database
+        row("b", "SSH-2.0-Router_7 build9", 300, 80), row("b", "SSH-2.0-Router_7", 300, 80, "d1"),
+        row("b", "SSH-2.0-acme-corp-bastion", 60, 1),  # one network: never published
+        row("c", "SSH-2.0-OnlyOneDay", 500, 90),  # missing from d1
+        row("d", "SSH-2.0-acme-corp-bastion", 400, 2), row("d", "SSH-2.0-acme-corp-bastion", 400, 2, "d1"),
+    ]  # fmt: skip
+    out, stats = harvest(rows, {fp["a"]}, min_hosts=20, min_nets=10, min_share=0.1)
+    assert [r["hasshServer"] for r in out] == [fp["b"]]
+    assert out[0]["serverIdentificationString"] == "SSH-2.0-Router_7" and out[0]["alsoSeenAs"] == []
+    assert "acme" not in json.dumps(out) and "_hosts" not in out[0]
+    assert abs(stats["lab"] - 5000 / 6260) < 1e-9
 
 
 def test_real_capture():

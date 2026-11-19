@@ -39,11 +39,16 @@ def main() -> int:
     parser.add_argument("--db", default=str(HERE / "hasshserver_fingerprints.json"))
     parser.add_argument("--min-hosts", type=int, default=50, help="hosts needed before 'absent' is reported")
     parser.add_argument("--markdown", action="store_true", help="print a markdown table")
+    parser.add_argument("--day", help="with several scans in the file: the one to use. Default: the latest")
     args = parser.parse_args()
 
     observed: dict[str, Counter] = defaultdict(Counter)
     by_hash: Counter = Counter()
-    for row in json.loads(Path(args.observations).read_text()):
+    rows = json.loads(Path(args.observations).read_text())
+    day = args.day or max(row.get("day", "") for row in rows)
+    for row in rows:
+        if row.get("day", "") != day:
+            continue
         if row.get("banner") and row.get("hassh_server"):
             observed[version_token(row["banner"])][row["hassh_server"]] += int(row["ips"])
             by_hash[row["hassh_server"]] += int(row["ips"])
@@ -54,7 +59,8 @@ def main() -> int:
         if line.strip():
             row = json.loads(line)
             key = (version_token(row["serverIdentificationString"]), row["hasshServer"])
-            lab.setdefault(key, []).append(f"{row['image']}:{row['imageVersion']}")
+            profile = f" [{row['configuration']}]" if row.get("configuration") else ""
+            lab.setdefault(key, []).append(f"{row['image']}:{row['imageVersion']}{profile}")
 
     counts: Counter = Counter()
     lines = []

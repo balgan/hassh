@@ -136,7 +136,9 @@ with open("traffic.pcap", "rb") as fh:
 * The identification string is now reliably attached to its KEXINIT (1.x
   keyed it on the source port twice and usually logged `null`).
 * A log file is only written with `-l`; without `-l` results are printed.
-* Results are matched against the [fingerprint database](hasshGen/).
+* Results are matched against the [fingerprint database](hasshGen/). A name in
+  brackets after a match is a hardening profile applied in the lab;
+  `(observed)` marks a server fingerprint only known from internet scans.
 
 ## Docker
 

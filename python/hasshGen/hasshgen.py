@@ -46,13 +46,28 @@ _SSH_OPTS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Batc
 # file, later releases include it from sshd_config.
 _PKG_SSHD = (
     "ssh-keygen -A >/dev/null 2>&1; mkdir -p /run/sshd /var/run/sshd /var/empty/sshd; "
+    # ssh-keygen -A is newer than OpenSSH 5.x, whose keys came from an init script
+    "[ -s /etc/ssh/ssh_host_rsa_key ] || ssh-keygen -q -t rsa -N '' -f /etc/ssh/ssh_host_rsa_key >/dev/null 2>&1; "
     "f=/etc/crypto-policies/back-ends/opensshserver.config; "
     "if grep -qs '^CRYPTO_POLICY=' $f; then . $f; fi; "
-    "exec $(command -v sshd || echo /usr/sbin/sshd) -D -e -p 22 $CRYPTO_POLICY"
+    "exec $(command -v sshd || echo /usr/sbin/sshd) -D -e -p 22 $SSHD_OPTS $CRYPTO_POLICY"
 )
 _PKG_SSH = f"ssh {_SSH_OPTS} -p $PORT hassh@$HOST true"
-_DROPBEAR = "mkdir -p /etc/dropbear; exec $(command -v dropbear || echo /usr/sbin/dropbear) -F -E -R -p 22"
+# -R (create host keys on demand) appeared in 2013.61; before that make one.
+_DROPBEAR = (
+    "mkdir -p /etc/dropbear; d=$(command -v dropbear || echo /usr/sbin/dropbear); "
+    "k=/etc/dropbear/dropbear_rsa_host_key; "
+    "if $d -h 2>&1 | grep -q -e '^-R'; then exec $d -F -E -R -p 22; fi; "
+    "[ -s $k ] || { rm -f $k; dropbearkey -t rsa -f $k >/dev/null 2>&1; }; exec $d -F -E -p 22"
+)
 _DBCLIENT = "dbclient -y -p $PORT hassh@$HOST true </dev/null"
+# OpenWrt creates its host key from an init script that is not run here.
+_OPENWRT_DROPBEAR = (
+    "mkdir -p /etc/dropbear /var/run /var/lock; k=/tmp/hasshgen_rsa_host_key; "
+    # old images ship empty placeholder key files, which dropbear refuses to load
+    "for f in /etc/dropbear/*_host_key; do [ -s $f ] || rm -f $f; done; "
+    "dropbearkey -t rsa -f $k >/dev/null 2>&1; exec dropbear -F -E -p 22 -P /tmp/dropbear.pid -r $k"
+)
 
 # recipe -> how to build, start and name an implementation.
 #   client / server : shell commands run inside the image
@@ -62,7 +77,7 @@ _DBCLIENT = "dbclient -y -p $PORT hassh@$HOST true </dev/null"
 RECIPES: dict[str, dict] = {
     "openssh-src": {
         "dockerfile": "Dockerfile.openssh-src",
-        "server": "exec /opt/openssh/sbin/sshd -D -e -p 22",
+        "server": "exec /opt/openssh/sbin/sshd -D -e -p 22 $SSHD_OPTS",
         "client": f"/opt/openssh/bin/ssh -F /dev/null {_SSH_OPTS} -p $PORT hassh@$HOST true",
         "names": ("openssh-portable", "openssh-portable"),
     },
@@ -105,7 +120,10 @@ RECIPES: dict[str, dict] = {
     "apt-dropbear": {
         "dockerfile": "Dockerfile.debian",
         "packages": "dropbear-bin",
-        "version": "dpkg-query -W -f='${Version}' dropbear-bin",
+        # before Debian 9 / Ubuntu 16.04 the binaries were in the "dropbear" package
+        "version": (
+            "dpkg-query -W -f='${Version}' dropbear-bin 2>/dev/null | grep . || dpkg-query -W -f='${Version}' dropbear"
+        ),
         "server": _DROPBEAR,
         "client": _DBCLIENT,
         "names": ("dropbear", "dropbear"),
@@ -118,6 +136,17 @@ RECIPES: dict[str, dict] = {
         "client": _PKG_SSH,
         "names": ("openssh-clients", "openssh-server"),
     },
+    "openwrt-dropbear": {
+        "dockerfile": "Dockerfile.openwrt",
+        "version": (
+            "mkdir -p /var/lock; { opkg list-installed 2>/dev/null | sed -n 's/^dropbear - //p' | grep . "
+            "|| apk list -I 2>/dev/null | sed -n 's/^dropbear-\\([0-9][^ ]*\\).*/\\1/p' | grep . "
+            "|| dropbear -V 2>&1 | sed -n 's/^Dropbear v//p'; } | head -n1"
+        ),
+        "server": _OPENWRT_DROPBEAR,
+        "client": _DBCLIENT,
+        "names": ("dropbear", "dropbear"),
+    },
     "zypper-openssh": {
         "dockerfile": "Dockerfile.rpm",
         "packages": "openssh",
@@ -127,6 +156,8 @@ RECIPES: dict[str, dict] = {
         "names": ("openssh", "openssh"),
     },
 }
+
+PROFILES: dict[str, dict] = json.loads((HERE / "profiles.json").read_text())
 
 _lock = threading.Lock()
 _next_port = FIRST_PORT
@@ -141,6 +172,22 @@ def docker(*args: str, timeout: float = 120, check: bool = True) -> subprocess.C
         tail = [line for line in lines if not noise.search(line)][-8:]
         raise RuntimeError(f"docker {args[0]} failed:\n" + "\n".join(tail))
     return proc
+
+
+def platform_args(target: dict) -> list[str]:
+    """Images without a build for this machine's architecture run emulated."""
+    return ["--platform", target["platform"]] if target.get("platform") else []
+
+
+def profile_opts(profile: str | None) -> str:
+    """sshd command line for a hardening profile from profiles.json."""
+    if not profile:
+        return ""
+    return " ".join(f"-o {key}={value}" for key, value in PROFILES[profile]["options"].items())
+
+
+def cache_name(target: dict, profile: str | None = None) -> str:
+    return slug(target) + (f"@{profile}" if profile else "") + ".json"
 
 
 def slug(target: dict) -> str:
@@ -184,10 +231,11 @@ def collector_client_record(port: int) -> dict | None:
 def build(target: dict, tag: str) -> None:
     recipe = RECIPES[target["recipe"]]
     cmd = ["build", "--progress=plain", "-t", tag, "-f", str(DOCKERFILE_DIR / recipe["dockerfile"])]
+    cmd += platform_args(target)
     args = {"IMAGE": target["image"], "IMAGE_VER": target["image_ver"]}
     if "packages" in recipe:
         args["PACKAGES"] = target.get("packages", recipe["packages"])
-    else:
+    elif "version" in target:
         args["VERSION"] = target["version"]
     if target.get("extra_pip"):
         args["EXTRA_PIP"] = target["extra_pip"]
@@ -200,17 +248,20 @@ def installed_version(target: dict, tag: str) -> str:
     recipe = RECIPES[target["recipe"]]
     if "version" not in recipe:
         return target["version"]
-    out = docker("run", "--rm", "--entrypoint", "sh", tag, "-c", recipe["version"]).stdout.strip()
+    out = docker(
+        "run", "--rm", *platform_args(target), "--entrypoint", "sh", tag, "-c", recipe["version"]
+    ).stdout.strip()
     if not out:
         raise RuntimeError("could not determine the installed package version")
     return out
 
 
-def fingerprint_server(target: dict, tag: str) -> dict:
-    name = "hg-" + slug(target)
+def fingerprint_server(target: dict, tag: str, profile: str | None = None) -> dict:
+    name = "hg-" + slug(target) + (f"-{profile}" if profile else "")
     docker("rm", "-f", name, check=False)
     docker(
-        "run", "-d", "--name", name, "--network", NETWORK, "--entrypoint", "sh", tag,
+        "run", "-d", "--name", name, "--network", NETWORK, *platform_args(target),
+        "-e", f"SSHD_OPTS={profile_opts(profile)}", "--entrypoint", "sh", tag,
         "-c", RECIPES[target["recipe"]]["server"],
     )  # fmt: skip
     try:
@@ -238,8 +289,9 @@ def fingerprint_client(target: dict, tag: str) -> dict:
     if port > LAST_PORT:
         raise RuntimeError("collector port range exhausted")
     proc = docker(
-        "run", "--rm", "--network", NETWORK, "-e", f"HOST={COLLECTOR}", "-e", f"PORT={port}",
-        "--entrypoint", "sh", tag, "-c", RECIPES[target["recipe"]]["client"],
+        "run", "--rm", "--network", NETWORK, *platform_args(target),
+        "-e", f"HOST={COLLECTOR}", "-e", f"PORT={port}", "--entrypoint", "sh", tag,
+        "-c", RECIPES[target["recipe"]]["client"],
         check=False, timeout=90,
     )  # fmt: skip
     for _ in range(10):
@@ -250,30 +302,49 @@ def fingerprint_client(target: dict, tag: str) -> dict:
     raise RuntimeError(f"client never connected: {(proc.stderr or proc.stdout).strip()[-400:]}")
 
 
+def jobs_for(target: dict, roles: list[str]) -> list[tuple[str, str | None]]:
+    """(role, profile) pairs of a target: profiles are extra server runs of the same image."""
+    jobs: list[tuple[str, str | None]] = [(role, None) for role in roles]
+    if "server" in roles:
+        jobs += [("server", profile) for profile in target.get("profiles", [])]
+    return jobs
+
+
 def run_target(target: dict, roles: list[str], force: bool) -> dict[str, dict]:
-    """Build one target and fingerprint the requested roles. Results are cached."""
+    """Build one target and fingerprint the requested roles. Results are cached.
+
+    A profile whose algorithms the server does not know is skipped: the
+    daemon refuses to start, which is what it does for a real administrator.
+    """
     tag = "hasshgen/" + slug(target)
     results, todo = {}, []
-    for role in roles:
-        cache = WORK_DIR / role / (slug(target) + ".json")
+    for role, profile in jobs_for(target, roles):
+        cache = WORK_DIR / role / cache_name(target, profile)
         if cache.exists() and not force:
-            results[role] = json.loads(cache.read_text())
+            results[role + (f"@{profile}" if profile else "")] = json.loads(cache.read_text())
         else:
-            todo.append(role)
+            todo.append((role, profile))
     if not todo:
         return results
     build(target, tag)
     version = installed_version(target, tag)
     client_name, server_name = RECIPES[target["recipe"]]["names"]
-    for role in todo:
+    for role, profile in todo:
         if role == "server":
-            r = fingerprint_server(target, tag)
+            try:
+                r = fingerprint_server(target, tag, profile)
+            except RuntimeError:
+                if profile:
+                    continue
+                raise
             row = {
                 "image": target["image"], "imageVersion": target["image_ver"],
                 "sshServer": server_name, "sshServerVersion": version,
                 "serverIdentificationString": r["server"],
                 "hasshServer": r["hasshServer"], "hasshServerAlgorithms": r["hasshServerAlgorithms"],
             }  # fmt: skip
+            if profile:
+                row["configuration"] = profile
             keep = ("hasshVersion", "skex", "seastc", "smastc", "scastc", "slcts", "slstc",
                     "seacts", "smacts", "scacts", "sshka")  # fmt: skip
         else:
@@ -287,10 +358,10 @@ def run_target(target: dict, roles: list[str], force: bool) -> dict[str, dict]:
             keep = ("hasshVersion", "ckex", "ceacts", "cmacts", "ccacts", "clcts", "clstc",
                     "ceastc", "cmastc", "ccastc", "cshka")  # fmt: skip
         row.update((k, r[k]) for k in keep)
-        cache = WORK_DIR / role / (slug(target) + ".json")
+        cache = WORK_DIR / role / cache_name(target, profile)
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(json.dumps(row))
-        results[role] = row
+        results[role + (f"@{profile}" if profile else "")] = row
     return results
 
 
@@ -307,7 +378,7 @@ def update_db(base: Path, rows: list[dict], role: str) -> tuple[int, int]:
     fp = "hassh" if role == "client" else "hasshServer"
 
     def key(row: dict) -> tuple:
-        return (row["image"], row["imageVersion"], row[soft], row[soft + "Version"])
+        return (row["image"], row["imageVersion"], row[soft], row[soft + "Version"], row.get("configuration", ""))
 
     json_path, csv_path = base.with_suffix(".json"), base.with_suffix(".csv")
     merged: dict[tuple, dict] = {}
@@ -323,12 +394,14 @@ def update_db(base: Path, rows: list[dict], role: str) -> tuple[int, int]:
         for row in merged.values():
             fh.write(json.dumps(row) + "\n")
     columns = ["image", "imageVersion", soft, soft + "Version", ident, fp, "hasshVersion", fp + "Algorithms"]
+    if role == "server":
+        columns.append("configuration")  # empty: as installed; otherwise a profile from profiles.json
     with csv_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh, lineterminator="\n")
         writer.writerow(columns)
         # Newest first, as in the original database.
         for row in reversed(list(merged.values())):
-            writer.writerow([row[c] for c in columns])
+            writer.writerow([row.get(c, "") for c in columns])
     return len(merged) - before, len(merged)
 
 
@@ -396,11 +469,13 @@ def main() -> int:
                 summary = []
                 for role, row in result.items():
                     summary.append(row["hassh" if role == "client" else "hasshServer"])
+                if len(summary) > 2:
+                    summary = summary[:2] + [f"+{len(summary) - 2} profiles"]
                 print(f"[+] ({done}/{len(targets)}) {name}: {' '.join(summary)}", flush=True)
         # Database order follows the target list, not completion order.
         for target in targets:
-            for role in roles:
-                cache = WORK_DIR / role / (slug(target) + ".json")
+            for role, profile in jobs_for(target, roles):
+                cache = WORK_DIR / role / cache_name(target, profile)
                 if cache.exists():
                     rows[role].append(json.loads(cache.read_text()))
     finally:

@@ -32,17 +32,35 @@ def load(filename: str) -> list[dict]:
         return [json.loads(line) for line in fh if line.strip()]
 
 
+OBSERVED_DB = "hasshserver_observed.json"
+
+
 @cache
 def _index(server: bool) -> dict[str, list[str]]:
     key, ident = ("hasshServer", "serverIdentificationString") if server else ("hassh", "clientIdentificationString")
     index: dict[str, list[str]] = {}
+
+    def add(fingerprint: str, name: str) -> None:
+        names = index.setdefault(fingerprint, [])
+        if name and name not in names:
+            names.append(name)
+
     for row in load(SERVER_DB if server else CLIENT_DB):
-        names = index.setdefault(row[key], [])
-        if row.get(ident) and row[ident] not in names:
-            names.append(row[ident])
+        if row.get(ident):
+            # Rows without "configuration" are the software as installed.
+            add(row[key], row[ident] + (f" [{row['configuration']}]" if row.get("configuration") else ""))
+    if server:
+        # Fingerprints only known from internet scans; the lab ones come first.
+        for row in load(OBSERVED_DB):
+            for name in [row["serverIdentificationString"], *row.get("alsoSeenAs", [])]:
+                add(row[key], f"{name} (observed)")
     return index
 
 
 def lookup(fingerprint: str, *, server: bool = False) -> list[str]:
-    """Identification strings known to produce *fingerprint*."""
+    """What is known to produce *fingerprint*.
+
+    Identification strings; a hardening profile applied in the lab is added
+    in brackets and strings only seen in internet scans end in "(observed)".
+    """
     return list(_index(server).get(fingerprint, ()))
