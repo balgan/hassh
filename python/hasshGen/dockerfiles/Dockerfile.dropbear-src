@@ -1,0 +1,15 @@
+# Dropbear built from the upstream release tarball with default options.
+ARG IMAGE=debian
+ARG IMAGE_VER=bookworm-slim
+FROM $IMAGE:$IMAGE_VER
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc libc6-dev make bzip2 ca-certificates curl zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
+ARG VERSION
+RUN mkdir -p /usr/src/build && curl -fsSL https://matt.ucc.asn.au/dropbear/releases/dropbear-$VERSION.tar.bz2 | tar xj --strip-components=1 -C /usr/src/build \
+ && cd /usr/src/build \
+ && ./configure --prefix=/opt/dropbear >/dev/null \
+ && make -j"$(nproc)" PROGRAMS="dropbear dbclient dropbearkey" >/dev/null \
+ && make PROGRAMS="dropbear dbclient dropbearkey" install >/dev/null \
+ && mkdir -p /etc/dropbear && cd / && rm -rf /usr/src/build
+ENV PATH=/opt/dropbear/bin:/opt/dropbear/sbin:$PATH

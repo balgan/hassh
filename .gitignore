@@ -1,0 +1,6 @@
+.hasshgen/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+dist/
+hassh.log

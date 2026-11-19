@@ -1,14 +1,16 @@
 # https://hub.docker.com/_/debian/
 # https://hub.docker.com/_/ubuntu/
-ARG IMAGE
-ARG IMAGE_VER
+ARG IMAGE=debian
+ARG IMAGE_VER=stable-slim
 FROM $IMAGE:$IMAGE_VER
-MAINTAINER Adel "0x4D31" Karimi
-
-ENV DEBIAN_FRONTEND noninteractive
-ARG SSHCLIENT
-ARG SSHCLIENT_VER
-# Install the SSH client
-RUN apt-get update && apt-get install -y \
-    $SSHCLIENT=$SSHCLIENT_VER \
+ENV DEBIAN_FRONTEND=noninteractive
+ARG PACKAGES
+# End-of-life releases move to the archive mirrors; fall back to them.
+RUN apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $PACKAGES >/dev/null 2>&1 \
+ || { sed -i -e 's|deb.debian.org|archive.debian.org|g' -e 's|security.debian.org|archive.debian.org|g' \
+          -e '/-updates/d' -e 's|ports.ubuntu.com/ubuntu-ports|old-releases.ubuntu.com/ubuntu|g' \
+          -e 's|archive.ubuntu.com|old-releases.ubuntu.com|g' -e 's|security.ubuntu.com|old-releases.ubuntu.com|g' \
+          /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; \
+      apt-get -o Acquire::Check-Valid-Until=false update \
+      && apt-get install -y --no-install-recommends --allow-unauthenticated $PACKAGES; } \
  && rm -rf /var/lib/apt/lists/*

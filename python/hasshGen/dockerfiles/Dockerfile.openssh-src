@@ -1,0 +1,16 @@
+# OpenSSH portable built from the upstream release tarball.
+# Releases before 9.0 need OpenSSL 1.1.1: build those with IMAGE=ubuntu IMAGE_VER=20.04.
+ARG IMAGE=debian
+ARG IMAGE_VER=bookworm-slim
+FROM $IMAGE:$IMAGE_VER
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc libc6-dev make ca-certificates curl libssl-dev zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd -r -d /var/empty -s /usr/sbin/nologin sshd && mkdir -p /var/empty
+ARG VERSION
+RUN mkdir -p /usr/src/build && curl -fsSL https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$VERSION.tar.gz | tar xz --strip-components=1 -C /usr/src/build \
+ && cd /usr/src/build \
+ && ./configure --prefix=/opt/openssh --sysconfdir=/opt/openssh/etc --with-privsep-path=/var/empty >/dev/null \
+ && make -j"$(nproc)" >/dev/null && make install >/dev/null \
+ && cd / && rm -rf /usr/src/build
+ENV PATH=/opt/openssh/bin:/opt/openssh/sbin:$PATH

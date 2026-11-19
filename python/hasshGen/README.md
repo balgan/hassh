@@ -1,82 +1,107 @@
-# hasshGen.py
+# hasshGen
 
 [![License: BSD 3-Clause License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-Sample python script and Dockerfiles to automate building docker images with different SSH clients/versions for generating HASSH fingerprints.
-As a demonstration we created a list ([sshClient_list](sshClient_list)) containing 49 different version of OpenSSH, Python’s paramiko and Dropbear SSH clients and generated a database of HASSH fingerprints in [JSON](hassh_fingerprints.json) and [CSV](hassh_fingerprints.csv) formats.
+Builds many versions of SSH software in containers and records their HASSH
+fingerprints. The results are the databases in this directory:
 
-## Getting Started
-1. Install Docker CE:
-    > [Download Docker Engine](https://store.docker.com/search?type=edition&offering=community)
+| file | content |
+|---|---|
+| [hassh_fingerprints.json](hassh_fingerprints.json) / [.csv](hassh_fingerprints.csv) | client fingerprints (`hassh`) |
+| [hasshserver_fingerprints.json](hasshserver_fingerprints.json) / [.csv](hasshserver_fingerprints.csv) | server fingerprints (`hasshServer`) |
 
-2. Install the Docker's Python library:
-    > `pipenv install docker`
+The JSON files hold one object per line with every KEXINIT name-list; the CSV
+files are the short form.
 
-4. Test:
-    > `pipenv run python3 hasshgen.py -h`
+## What is covered
 
-Output:
+Listed in [targets.json](targets.json):
+
+* **OpenSSH portable** built from every upstream release tarball, 7.9p1 to 10.6p2
+* **Dropbear** built from every upstream release tarball, 2019.77 to 2026.94
+* **Paramiko** 2.4.2 to 5.1.0 from PyPI, as client and as server
+* **Distribution packages** of OpenSSH and Dropbear on Alpine, Debian, Ubuntu,
+  Fedora, CentOS, Rocky, Alma, Oracle and Amazon Linux, Red Hat UBI and
+  openSUSE. Distributions change the algorithm lists (Red Hat's crypto
+  policies most of all), so their fingerprints differ from upstream's for
+  the same version number.
+
+Rows from the original 2018 database (OpenSSH 5.3 to 7.8, Paramiko 1.13 to
+2.4.1, Dropbear 2012.55 to 2018.76) are kept as they were.
+
+Source builds use default `configure` options and every server runs its
+default configuration: a fingerprint identifies a build *and* its
+configuration, so a host with hardened `KexAlgorithms`/`Ciphers`/`MACs`
+will not match.
+
+## How it works
 
 ```
-usage: hasshgen.py [-h] [-i IMAGE] [-iV IMAGE_VER] [-c SSHCLIENT]
-                   [-cV SSHCLIENT_VER] [-d DOCKER_FILE] -s SERVER
-                   [-iF INPUT_FILE] [-f] [--cmd CMD]
-
-A python script to automate building docker images with different SSH
-clients/versions.
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -i IMAGE, --image IMAGE
-                        Docker image name. e.g. alpine, ubuntu
-  -iV IMAGE_VER, --image_ver IMAGE_VER
-                        Docker image version. e.g. 18.04, latest
-  -c SSHCLIENT, --sshclient SSHCLIENT
-                        SSH client name
-  -cV SSHCLIENT_VER, --sshclient_ver SSHCLIENT_VER
-                        SSH client version
-  -d DOCKER_FILE, --docker_file DOCKER_FILE
-                        Specify the Dockerfile
-  -s SERVER, --server SERVER
-                        Specify the server address to test the SSH connection
-  -iF INPUT_FILE, --input_file INPUT_FILE
-                        Bulk mode; Specify an input file containing a list of
-                        docker image, image version, sshclient and sshclient
-                        version
-  -f, --fingerprint     Set this option to automatically run hassh.py for
-                        capturing SSH client fingerprints (HASSH). Specify the
-                        command for running hassh.py using --cmd arg.
-  --cmd CMD             Enter the command for running hassh.py. Use with
-                        -f/--fingerprint arg
+                     docker network "hasshgen"
+  +--------------------+   probe :22    +---------------------------+
+  |     collector      | -------------> | server under test (sshd)  |  -> hasshServer
+  | (python -m hassh)  |                +---------------------------+
+  | listens on         |   connect      +---------------------------+
+  | 10000-11999        | <------------- | client under test (ssh)   |  -> hassh
+  +--------------------+  own port each +---------------------------+
 ```
+
+A single collector container runs the [hassh](../README.md) tool. Each
+implementation is built into its own image. Servers are started and probed
+by the collector; clients connect to the collector, each to its own port, so
+any number can run at the same time and still be told apart. Nothing
+listens on the host and no packet capture is involved. Nobody ever
+authenticates: the collector hangs up as soon as it has the KEXINIT.
 
 ## Usage
- * Build and run a docker image with specific SSH client/version:
+
+Needs Docker and Python 3.9+; nothing else.
+
 ```
-$ python3 hasshgen.py --docker_file Dockerfile.alpine --image alpine -iV 3.6 --sshclient openssh-client --sshclient_ver 7.5_p1-r2 --server <your-ssh-server>
-
-[+] <Image: 'hasshgen:alpine0'> successfully built
-    - image: alpine:3.6, ssh client: openssh-client 7.5_p1-r2
-[+] Command successfully executed!
- ```
-
-After building the docker image, the script runs a SSH command to generate SSH connections for fingerprinting. It currently supports openssh, paramiko, and dropbear SSH clients. You can easily add other SSH clients.
-
- * Build docker images using an input file in this format: [sshClient_list](sshClient_list)
-```
-$ python3 hasshgen.py --input_file sshClient_list --server <your-ssh-server>
-[+] <Image: 'hasshgen:alpine1'> successfully built
-    - image: alpine:3.3, ssh client: openssh-client 7.2_p2-r3
-[+] Command successfully executed!
-[+] <Image: 'hasshgen:alpine2'> successfully built
-    - image: alpine:3.4, ssh client: openssh-client 7.2_p2-r5
-[+] Command successfully executed!
-[+] <Image: 'hasshgen:alpine3'> successfully built
-    - image: alpine:3.5, ssh client: openssh-client 7.4_p1-r1
-[+] Command successfully executed!
+$ python3 hasshgen.py                       # everything, clients and servers
+$ python3 hasshgen.py -m server -j 8        # only hasshServer, 8 targets at a time
+$ python3 hasshgen.py -k 'openssh-src.*10\.' # only targets matching a regex
+$ python3 hasshgen.py --list
 ```
 
- * You can use `-f` or `--fingerprint` arg to automatically run `hassh.py` for extracting the fingerprints. Use `--cmd` to change the default HASSH_COMMAND:
- ```
-$ python3 hasshgen.py --input_file sshClient_list --server <your-ssh-server> --fingerprint --cmd 'python3 ../hassh.py -i eth0 -l json -o fingerprint.json'
- ```
+```
+[+] (1/3) openssh-src-debian-bookworm-slim-10.6p2: 671c5858369db8e0a60108d866bbf8ec eeca2460550b9ded084ecf2f70a75356
+[+] (2/3) dropbear-src-debian-bookworm-slim-2026.94: 223440d715dad2172ff5f50e87dc537a 86deebba947efa46686aa1f4c26b334c
+[+] (3/3) rpm-openssh-rockylinux-8: 686e20b21417c07a18d6311d1e29dacb a2a7e3805543a29c522f9a3fa5998efd
+[=] server database: 3 new, 3 total
+[=] client database: 3 new, 52 total
+```
+
+Results are cached in `.hasshgen/`, so an interrupted run resumes where it
+stopped (`--force` re-runs). Images are deleted as soon as a target is done,
+base images that were pulled for the run included, and the build cache is
+pruned along the way; `--keep-images` turns that off.
+
+### Adding a version
+
+Append a line to [targets.json](targets.json):
+
+```json
+{"recipe": "openssh-src", "image": "debian", "image_ver": "bookworm-slim", "version": "10.7p1"}
+{"recipe": "apt-openssh", "image": "ubuntu", "image_ver": "27.04"}
+```
+
+Package recipes install whatever version the release currently ships and
+record it. For another SSH implementation add a recipe to `RECIPES` in
+`hasshgen.py`: a Dockerfile plus the shell commands that start its server and
+its client.
+
+## Validating against real-world data
+
+`validate.py` compares the server database with observations of real
+hosts, for instance an internet-wide scan grouped by identification string
+and hasshServer:
+
+```
+$ python3 validate.py observations.json
+confirmed SSH-2.0-OpenSSH_9.6p1   e42184b06d45385a906f0803d04c83da  4891100 of 5117574 hosts (95.6%), rank 1  [ubuntu:24.04]
+...
+```
+
+`observations.json` is a JSON array of `{"banner": ..., "hassh_server": ..., "ips": ...}`.
+See [VALIDATION.md](VALIDATION.md) for the result of the last run.

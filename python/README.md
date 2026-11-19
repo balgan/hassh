@@ -1,158 +1,158 @@
-# HASSH.py
+# hassh (Python)
 
 [![License: BSD 3-Clause License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-HASSH is a method for creating SSH Client and Server fingerprints. This python script generates HASSH fingerprints from input PCAP files and live network traffic.
+Extracts [HASSH](../README.md) fingerprints of SSH clients and servers from
+capture files and live traffic, or actively: by probing a server or by
+listening for clients.
 
-You can use [hasshGen.py](hasshGen/) to automate building docker images with different SSH clients/versions for generating HASSH fingerprints. As a demonstration we created a list ([sshClient_list](hasshGen/sshClient_list)) containing 49 different version of OpenSSH, Python’s paramiko and Dropbear SSH clients and generated a database of HASSH fingerprints in [JSON](hasshGen/hassh_fingerprints.json) and [CSV](hasshGen/hassh_fingerprints.csv) formats.
+Version 2 is a rewrite with **no dependencies** (the 1.x script needed
+tshark and pyshark). It needs Python 3.9 or newer.
 
-## Getting Started
-1. Install Tshark. 
-    > `apt-get install tshark` on Debian/Ubuntu or `yum install wireshark` on Centos 7
-    
+## Getting started
 
-2. Install Pipenv:
-    > `pip3 install pipenv`
+Run it straight from a checkout:
 
-3. Install dependencies:
-    > `pipenv install`
+    python3 hassh.py -h
 
-4. Test:
+or install the `hassh` command:
 
-To activate the virtualenv, run pipenv shell:
-```
-$ pipenv shell
-(python-ZnElGiuE) bash-3.2$ python3 hassh.py -h
-```
-
-Alternatively, run a command inside the virtualenv with pipenv run:
+    pip install ./python
 
 ```
-$ pipenv run python3 hassh.py -h
-```
+usage: hassh [-h] [-V] [-r READ_FILE] [-d READ_DIRECTORY] [-i INTERFACE]
+             [--probe HOST[:PORT] [HOST[:PORT] ...]]
+             [--listen [ADDR:]PORT[-PORT]] [-fp {client,server,all}]
+             [-f BPF_FILTER] [-l {json,csv}] [-o OUTPUT_FILE] [-w WRITE_PCAP]
+             [-p] [--count COUNT] [--timeout TIMEOUT] [--no-lookup]
 
-Output:
+Extract HASSH fingerprints of SSH clients and servers.
 
-```
-usage: hassh.py [-h] [-r READ_FILE] [-d READ_DIRECTORY] [-i INTERFACE]
-                [-fp {client,server}] [-da DECODE_AS] [-f BPF_FILTER]
-                [-l {json,csv}] [-o OUTPUT_FILE] [-w WRITE_PCAP] [-p]
+input (choose one):
+  -r, --read_file READ_FILE
+                        pcap or pcapng file to process ('-' for stdin)
+  -d, --read_directory READ_DIRECTORY
+                        directory of capture files to process
+  -i, --interface INTERFACE
+                        listen on interface (uses tcpdump)
+  --probe HOST[:PORT] [HOST[:PORT] ...]
+                        connect to SSH servers and print their hasshServer
+  --listen [ADDR:]PORT[-PORT]
+                        accept SSH clients on a port or port range and print
+                        their hassh
 
-A python script for extracting HASSH fingerprints
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -r READ_FILE, --read_file READ_FILE
-                        pcap file to process
-  -d READ_DIRECTORY, --read_directory READ_DIRECTORY
-                        directory of pcap files to process
-  -i INTERFACE, --interface INTERFACE
-                        listen on interface
-  -fp {client,server}, --fingerprint {client,server}
+options:
+  -fp, --fingerprint {client,server,all}
                         client or server fingerprint. Default: all
-  -da DECODE_AS, --decode_as DECODE_AS
-                        a dictionary of {decode_criterion_string:
-                        decode_as_protocol} that are used to tell tshark to
-                        decode protocols in situations it wouldn't usually.
-                        Default: {'tcp.port==2222': 'ssh'}.
-  -f BPF_FILTER, --bpf_filter BPF_FILTER
-                        BPF capture filter to use (for live capture only).
-                        Default: 'tcp port 22 or tcp port 2222'
-  -l {json,csv}, --log_format {json,csv}
-                        specify the output log format (json/csv)
-  -o OUTPUT_FILE, --output_file OUTPUT_FILE
-                        specify the output log file. Default: hassh.log
-  -w WRITE_PCAP, --write_pcap WRITE_PCAP
+  -f, --bpf_filter BPF_FILTER
+                        BPF capture filter (live capture only). Default: 'tcp
+                        port 22 or tcp port 2222'
+  -l, --log_format {json,csv}
+                        output log format
+  -o, --output_file OUTPUT_FILE
+                        output log file, '-' for stdout. Default: hassh.log
+  -w, --write_pcap WRITE_PCAP
                         save the live captured packets to this file
   -p, --print_output    print the output
+  --count COUNT         with --listen: exit after this many clients
+  --timeout TIMEOUT     socket timeout for --probe/--listen
+  --no-lookup           do not match against the fingerprint database
 ```
 
 ## Usage
- * Live network traffic capture:
- ```
-    $ python3 hassh.py -i eth0 -l json -o hassh.json --print
- ```
 
-Output:
+* Fingerprint a server without capturing anything. Only the identification
+  string is sent; no key exchange or authentication takes place:
+
 ```
+$ python3 hassh.py --probe test.example.org
+
 [+] Server SSH_MSG_KEXINIT detected
-    [ 192.1.2.3:22 -> 10.1.2.3:52068 ]
-        [-] Identification String: SSH-2.0-OpenSSH_7.2p2 Ubuntu-4ubuntu2.4
-        [-] hasshServer: d43d91bc39d5aaed819ad9f6b57b7348
-        [-] hasshServer Algorithms: curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1;chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com;umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1;none,zlib@openssh.com
-[+] Client SSH_MSG_KEXINIT detected
-    [ 10.1.2.3:52068 -> 192.1.2.3:22 ]
-        [-] Identification String: SSH-2.0-OpenSSH_7.6
-        [-] hassh: 06046964c022c6407d15a27b12a6a4fb
-        [-] hassh Algorithms: curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,ext-info-c;chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com;umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1;none,zlib@openssh.com,zlib
+    [ 192.0.2.10:22 -> 10.1.2.3:53112 ]
+        [-] Identification String: SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.14
+        [-] hasshServer: e42184b06d45385a906f0803d04c83da
+        [-] hasshServer Algorithms: sntrup761x25519-sha512@openssh.com,curve25519-sha256,...
+        [-] Known as: SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.14, SSH-2.0-OpenSSH_9.6
 ```
 
-JSON Output:
- ```javascript
-{
-  "timestamp": "2018-09-04T18:57:03.644663",
-  "sourceIp": "10.1.2.3",
-  "destinationIp": "192.1.2.3",
-  "sourcePort": "52068",
-  "destinationPort": "22",
-  "client": "SSH-2.0-OpenSSH_7.6",
-  "hassh": "06046964c022c6407d15a27b12a6a4fb",
-  "hasshAlgorithms": "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,ext-info-c;chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com;umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1;none,zlib@openssh.com,zlib",
-  "hasshVersion": "1.0",
-  "ckex": "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,ext-info-c",
-  "ceacts": "chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com",
-  "cmacts": "umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1",
-  "ccacts": "none,zlib@openssh.com,zlib",
-  "clcts": "[Empty]",
-  "clstc": "[Empty]",
-  "ceastc": "chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com",
-  "cmastc": "umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1",
-  "ccastc": "none,zlib@openssh.com,zlib",
-  "cshka": "ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-ed25519-cert-v01@openssh.com,ssh-rsa-cert-v01@openssh.com,ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa"
-}
-{
-  "timestamp": "2018-09-04T18:57:04.534235",
-  "eventType": "retransmission",
-  "eventMessage": "This packet is a (suspected) retransmission",
-  "sourceIp": "10.1.2.3",
-  "destinationIp": "192.1.2.3",
-  "sourcePort": "52068",
-  "destinationPort": "22"
-}
+* Fingerprint whatever SSH client connects to you:
+
+```
+$ python3 hassh.py --listen 2222 &
+$ ssh -p 2222 localhost
 ```
 
-  * Reading from an input PCAP file (```-r pcapfile.pcap```) or a directory of PCAP files (```-d pcap_dir/```):
+* Live network traffic capture (needs `tcpdump` and capture privileges):
 
- ```
-    $ python3 hassh.py -r traffic.pcap -l csv -o hassh.csv --print
- ```
+```
+$ sudo python3 hassh.py -i eth0 -l json -o hassh.json --print_output
+```
 
-CSV Output:
+* Read capture files (pcap or pcapng). SSH is recognised on **any** port from
+  its identification string, and the client is whoever sent the SYN:
+
+```
+$ python3 hassh.py -r traffic.pcap -l csv -o hassh.csv --print_output
+$ tcpdump -r traffic.pcap -w - 'tcp' | python3 hassh.py -r - -l json -o -
+```
+
+JSON output (one object per line; the field names are unchanged from 1.x):
+
+```
+{"timestamp": "2018-09-04T18:57:03.644663", "sourceIp": "10.1.2.3", "destinationIp": "192.1.2.3", "sourcePort": "52068", "destinationPort": "22", "client": "SSH-2.0-OpenSSH_7.6", "hassh": "06046964c022c6407d15a27b12a6a4fb", "hasshAlgorithms": "curve25519-sha256,...;chacha20-poly1305@openssh.com,...;umac-64-etm@openssh.com,...;none,zlib@openssh.com,zlib", "hasshVersion": "1.0", "ckex": "...", "ceacts": "...", "cmacts": "...", "ccacts": "...", "clcts": "", "clstc": "", "ceastc": "...", "cmastc": "...", "ccastc": "...", "cshka": "..."}
+{"timestamp": "2018-09-04T18:57:03.673866", "sourceIp": "192.1.2.3", "destinationIp": "10.1.2.3", "sourcePort": "22", "destinationPort": "52068", "server": "SSH-2.0-OpenSSH_7.2p2 Ubuntu-4ubuntu2.4", "hasshServer": "d43d91bc39d5aaed819ad9f6b57b7348", "hasshServerAlgorithms": "...", "hasshVersion": "1.0", "skex": "...", "seastc": "...", "smastc": "...", "scastc": "...", "slcts": "", "slstc": "", "seacts": "...", "smacts": "...", "scacts": "...", "sshka": "..."}
+```
+
+CSV output:
+
 ```
 timestamp,sourceIp,destinationIp,sourcePort,destinationPort,hasshType,identificationString,hassh,hasshVersion,hasshAlgorithms,kexAlgs,encAlgs,macAlgs,cmpAlgs
-2018-09-04T18:57:03.642572,192.1.2.3,10.1.2.3,22,52068,server,"SSH-2.0-OpenSSH_7.2p2 Ubuntu-4ubuntu2.4",d43d91bc39d5aaed819ad9f6b57b7348,1.0,"curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1;chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com;umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1;none,zlib@openssh.com","curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha1","chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com","umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1","none,zlib@openssh.com"
-2018-09-04T18:57:03.644663,10.1.2.3,192.1.2.3,52068,22,client,"SSH-2.0-OpenSSH_7.6",06046964c022c6407d15a27b12a6a4fb,1.0,"curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,ext-info-c;chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com;umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1;none,zlib@openssh.com,zlib","curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,ext-info-c","chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com","umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1","none,zlib@openssh.com,zlib"
 ```
+
+## As a library
+
+```python
+from hassh import parse_kexinit
+from hassh.net import probe
+from hassh.pcap import iter_kexinit
+
+event = probe("test.example.org", 22)
+print(event.banner, event.kexinit.hassh_server)
+
+with open("traffic.pcap", "rb") as fh:
+    for event in iter_kexinit(fh):
+        k = event.kexinit
+        print(event.src, "client" if event.is_client else "server", k.hassh if event.is_client else k.hassh_server)
+```
+
+## Changes from 1.x
+
+* No tshark / pyshark; pure standard library.
+* `--probe` and `--listen` active modes.
+* SSH detected on any port; `-da/--decode_as` is accepted and ignored.
+* Client/server decided by the TCP handshake rather than by comparing port
+  numbers (the port heuristic remains the fallback when the capture misses
+  the handshake).
+* The identification string is now reliably attached to its KEXINIT (1.x
+  keyed it on the source port twice and usually logged `null`).
+* A log file is only written with `-l`; without `-l` results are printed.
+* Results are matched against the [fingerprint database](hasshGen/).
 
 ## Docker
 
-A dockerized version of hassh.py can be used to extract HASSH fingerprints from input PCAP files and live network traffic.
+```
+$ cd python
+$ docker build -t hassh:latest -f docker/Dockerfile .
+$ docker run --rm hassh:latest --probe test.example.org
+$ docker run --rm -v ~/pcap:/data hassh:latest -d /data -l json -o /data/hassh.json
+$ docker run --rm --net=host --cap-add=NET_RAW hassh:latest -i any -p
+```
 
-Build the docker image using Dockerfile:
- ```
-    $ docker build -t hassh:latest .
- ```
+Host networking only works on Linux hosts.
 
- * Reading from input PCAP files:
+## Tests
 
-You can mount your host ~/pcap dir to copy pcap files to the container and also keep the logs on your host:
- ```
-    $ docker run -v ~/pcap:/tmp/ -it hassh:latest -d /tmp/ -l json -o /tmp/log.json
- ```
-
- * Live network traffic capture:
- ```
-    $ docker run --net=host -it hassh:latest -i any --print
- ```
-
-Note: According to Docker's [docs](https://docs.docker.com/network/host/), the host networking driver only works on Linux hosts, and is not supported on Docker for Mac, Docker for Windows, or Docker EE for Windows Server.
+```
+$ pip install -e '.[dev]'
+$ pytest
+```
