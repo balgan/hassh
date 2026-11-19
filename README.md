@@ -81,7 +81,7 @@ $ python3 python/hassh.py --listen 2222                   # hassh of whoever con
 $ python3 python/hassh.py -r capture.pcap -l json -o -    # both, from a capture file
 $ zkg install hassh                                       # Zeek: adds hassh fields to ssh.log
 ```
-Known fingerprints are in [python/hasshGen](python/hasshGen/): [clients](python/hasshGen/hassh_fingerprints.csv) and [servers](python/hasshGen/hasshserver_fingerprints.csv).
+Known fingerprints are in [python/hasshGen](python/hasshGen/): [clients](python/hasshGen/hassh_fingerprints.csv) and [servers](python/hasshGen/hasshserver_fingerprints.csv) built in a lab, plus [server fingerprints observed on the internet](python/hasshGen/hasshserver_observed.csv). Together they cover 99% of the SSH servers of an internet-wide scan ([details](python/hasshGen/VALIDATION.md)).
 
 ## References:
 - [RFC4253 The Secure Shell (SSH) Transport Layer Protocol](https://www.ietf.org/rfc/rfc4253.txt)
