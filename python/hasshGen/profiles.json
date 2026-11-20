@@ -88,5 +88,151 @@
    "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
    "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
   }
+ },
+ "compression-no": {
+  "description": "Compression disabled, everything else as installed",
+  "source": "https://man.openbsd.org/sshd_config#Compression",
+  "options": {
+   "Compression": "no"
+  }
+ },
+ "terrapin-no-chacha20": {
+  "description": "Terrapin (CVE-2023-48795) workaround: ChaCha20-Poly1305 removed",
+  "source": "https://terrapin-attack.com/",
+  "options": {
+   "Ciphers": "-chacha20-poly1305@openssh.com"
+  }
+ },
+ "terrapin-no-etm": {
+  "description": "Terrapin (CVE-2023-48795) workaround: encrypt-then-MAC modes removed",
+  "source": "https://terrapin-attack.com/",
+  "options": {
+   "MACs": "-*-etm@openssh.com"
+  }
+ },
+ "terrapin-no-chacha20-no-etm": {
+  "description": "Terrapin (CVE-2023-48795) workaround: ChaCha20-Poly1305 and encrypt-then-MAC modes removed",
+  "source": "https://terrapin-attack.com/",
+  "options": {
+   "Ciphers": "-chacha20-poly1305@openssh.com",
+   "MACs": "-*-etm@openssh.com"
+  }
+ },
+ "google-cos": {
+  "description": "Google Container-Optimized OS sshd_config (GKE nodes, Compute Engine COS images)",
+  "source": "https://cos.googlesource.com/cos/overlays/board-overlays/+/refs/heads/master/project-lakitu/",
+  "options": {
+   "Ciphers": "aes128-gcm@openssh.com,aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr",
+   "KexAlgorithms": "+diffie-hellman-group-exchange-sha256"
+  }
+ },
+ "ssh-audit-2023": {
+  "description": "ssh-audit hardening guide as published in 2023, Ubuntu 22.04 (cipher order changed since)",
+  "source": "https://web.archive.org/web/20230127185440/https://www.ssh-audit.com/hardening_guides.html",
+  "options": {
+   "KexAlgorithms": "sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,gss-curve25519-sha256-,diffie-hellman-group16-sha512,gss-group16-sha512-,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+  }
+ },
+ "dev-sec": {
+  "description": "dev-sec ssh_hardening (Ansible, Chef, Puppet) algorithm lists for OpenSSH 6.6+",
+  "source": "https://github.com/dev-sec/ansible-collection-hardening/blob/master/roles/ssh_hardening/vars/main.yml",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256"
+  }
+ },
+ "dev-sec-no-compression": {
+  "description": "dev-sec ssh_hardening as the role deploys it: algorithm lists and Compression no",
+  "source": "https://github.com/dev-sec/ansible-collection-hardening/blob/master/roles/ssh_hardening/vars/main.yml",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256",
+   "Compression": "no"
+  }
+ },
+ "dev-sec-2017": {
+  "description": "dev-sec ansible-ssh-hardening, 2017 defaults (with RIPEMD-160 MACs)",
+  "source": "https://github.com/dev-sec/ansible-ssh-hardening/blob/9c8b7837/defaults/main.yml",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-ripemd160-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,hmac-ripemd160"
+  }
+ },
+ "dev-sec-puppet-ciphers": {
+  "description": "dev-sec puppet-ssh-hardening cipher list only (OpenSSH 6.6+)",
+  "source": "https://github.com/dev-sec/puppet-ssh-hardening",
+  "options": {
+   "Ciphers": "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
+  }
+ },
+ "dev-sec-puppet-ciphers-ctr": {
+  "description": "dev-sec puppet-ssh-hardening cipher list only (CTR)",
+  "source": "https://github.com/dev-sec/puppet-ssh-hardening",
+  "options": {
+   "Ciphers": "aes256-ctr,aes192-ctr,aes128-ctr"
+  }
+ },
+ "dev-sec-puppet-kex": {
+  "description": "dev-sec puppet-ssh-hardening key exchange list only",
+  "source": "https://github.com/dev-sec/puppet-ssh-hardening",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256"
+  }
+ },
+ "ansible-lockdown-rhel7-cis": {
+  "description": "ansible-lockdown RHEL7-CIS role defaults (2022)",
+  "source": "https://github.com/ansible-lockdown/RHEL7-CIS/blob/devel/defaults/main.yml",
+  "options": {
+   "KexAlgorithms": "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256",
+   "Ciphers": "aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256"
+  }
+ },
+ "ansible-lockdown-rhel7-cis-2021": {
+  "description": "ansible-lockdown RHEL7-CIS role defaults (2021): Ciphers and MACs",
+  "source": "https://github.com/ansible-lockdown/RHEL7-CIS/blob/devel/defaults/main.yml",
+  "options": {
+   "Ciphers": "aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com"
+  }
+ },
+ "ansible-lockdown-rhel7-cis-2021-no-compression": {
+  "description": "ansible-lockdown RHEL7-CIS role defaults (2021) with Compression no",
+  "source": "https://github.com/ansible-lockdown/RHEL7-CIS/blob/devel/defaults/main.yml",
+  "options": {
+   "Ciphers": "aes256-ctr,aes192-ctr,aes128-ctr",
+   "MACs": "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com",
+   "Compression": "no"
+  }
+ },
+ "crypto-policy-legacy": {
+  "description": "update-crypto-policies --set LEGACY",
+  "source": "https://access.redhat.com/articles/3642912",
+  "crypto_policy": "LEGACY"
+ },
+ "crypto-policy-future": {
+  "description": "update-crypto-policies --set FUTURE",
+  "source": "https://access.redhat.com/articles/3642912",
+  "crypto_policy": "FUTURE"
+ },
+ "crypto-policy-fips": {
+  "description": "update-crypto-policies --set FIPS",
+  "source": "https://access.redhat.com/articles/3642912",
+  "crypto_policy": "FIPS"
+ },
+ "crypto-policy-default-sha1": {
+  "description": "update-crypto-policies --set DEFAULT:SHA1 (RHEL 9)",
+  "source": "https://access.redhat.com/articles/3642912",
+  "crypto_policy": "DEFAULT:SHA1"
+ },
+ "crypto-policy-default-no-sha1": {
+  "description": "update-crypto-policies --set DEFAULT:NO-SHA1 (RHEL 8)",
+  "source": "https://access.redhat.com/articles/3642912",
+  "crypto_policy": "DEFAULT:NO-SHA1"
  }
 }

@@ -19,8 +19,11 @@ files are the short form.
 Listed in [targets.json](targets.json):
 
 * **OpenSSH portable** built from every upstream release tarball, 5.3p1 to 10.6p2
-* **Dropbear** built from every upstream release tarball, 2019.77 to 2026.94
+* **Dropbear** built from upstream release tarballs, 2012.55 to 2026.94
 * **Paramiko** 2.4.2 to 5.1.0 from PyPI, as client and as server
+* **golang.org/x/crypto/ssh** with library defaults, 2019 to today: what the
+  many Go-based servers (Gitea, SFTPGo, honeypots, ...) present unless they
+  configure their own lists
 * **Distribution packages** of OpenSSH and Dropbear on Alpine, Debian, Ubuntu,
   Fedora, CentOS, Rocky, Alma, Oracle and Amazon Linux, Red Hat UBI and
   openSUSE, including releases long past end of life (CentOS 6, Debian 6
@@ -30,16 +33,23 @@ Listed in [targets.json](targets.json):
   version number.
 * **OpenWrt** 14.07 to 25.12: Dropbear as built for the firmware images,
   taken from the published root filesystems.
-* **Hardening profiles** ([profiles.json](profiles.json)): the widely copied
-  `KexAlgorithms` / `Ciphers` / `MACs` recommendations (Mozilla, ssh-audit,
-  "Secure Secure Shell", CIS) applied to the distribution packages. These
-  rows carry the profile name in `configuration`.
+* **Configuration profiles** ([profiles.json](profiles.json)), applied to
+  distribution packages and to upstream builds. These rows carry the profile
+  name in `configuration`:
+  * the widely copied `KexAlgorithms` / `Ciphers` / `MACs` recommendations:
+    Mozilla, ssh-audit (current and 2023), "Secure Secure Shell", CIS,
+    dev-sec hardening (Ansible, Chef, Puppet), ansible-lockdown;
+  * the Terrapin (CVE-2023-48795) workarounds that remove ChaCha20-Poly1305
+    and/or the encrypt-then-MAC modes, and `Compression no`;
+  * the system-wide crypto policies of Fedora and RHEL 8+ (`LEGACY`,
+    `FUTURE`, `FIPS`, `DEFAULT:SHA1`, `DEFAULT:NO-SHA1`);
+  * vendor configurations of upstream OpenSSH: Google Container-Optimized OS.
 
 Client rows from the original 2018 database (Paramiko 1.13 to 2.4.1,
 Dropbear 2012.55 to 2018.76, ...) are kept as they were.
 
 Source builds use default `configure` options. A fingerprint identifies a
-build *and* its configuration: apart from the hardening profiles every
+build *and* its configuration: apart from the profiles every
 server runs as installed, and a host with its own `KexAlgorithms` /
 `Ciphers` / `MACs` only matches if somebody else made the same edit and it
 ended up in the observed database.
@@ -105,14 +115,35 @@ record it. For another SSH implementation add a recipe to `RECIPES` in
 `hasshgen.py`: a Dockerfile plus the shell commands that start its server and
 its client.
 
-### Hardening profiles
+### Configuration profiles
 
 A target can list `"profiles"`: after the default run the same image is
-started once per profile with its `KexAlgorithms`, `Ciphers` and `MACs` on
-the sshd command line. A server that does not know one of the algorithms
-refuses to start, exactly as it would for an administrator, and that
-combination is skipped. Add a profile to [profiles.json](profiles.json)
-with the URL it was taken from.
+started once per profile with its `options` on the sshd command line
+(lists may be relative, as in `Ciphers -chacha20-poly1305@openssh.com`), or
+after `update-crypto-policies --set` for a profile with a `crypto_policy`.
+A server that does not know one of the algorithms or the policy refuses to
+start, exactly as it would for an administrator, and that combination is
+skipped. Add a profile to [profiles.json](profiles.json) with the URL it
+was taken from.
+
+## Keeping up to date
+
+`update_targets.py` looks where the projects publish their releases (the
+OpenSSH and Dropbear release directories, PyPI, the Go module proxy,
+downloads.openwrt.org, and image tags on Docker Hub and quay.io) for
+anything newer than what [targets.json](targets.json) has:
+
+```
+$ python3 update_targets.py          # list what is new
+$ python3 update_targets.py --run    # build it, fingerprint it, add what worked
+```
+
+The [weekly workflow](../../.github/workflows/update-fingerprints.yml) runs
+this, also rebuilds the distribution packages (`--force --changed-only`: a
+package update only adds a row when the fingerprint changed), removes
+observed fingerprints the lab has caught up with (`harvest.py --prune`),
+and opens a pull request with the result. It needs the repository setting
+*Allow GitHub Actions to create and approve pull requests*.
 
 ## Observed fingerprints
 
@@ -148,7 +179,7 @@ and hasshServer:
 
 ```
 $ python3 validate.py observations.json
-confirmed SSH-2.0-OpenSSH_9.6p1   e42184b06d45385a906f0803d04c83da  4891100 of 5117574 hosts (95.6%), rank 1  [ubuntu:24.04]
+confirmed SSH-2.0-OpenSSH_9.6p1   e42184b06d45385a906f0803d04c83da  95.6% of the hosts announcing this version, rank 1  [ubuntu:24.04]
 ...
 ```
 

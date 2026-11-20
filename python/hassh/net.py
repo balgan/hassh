@@ -39,9 +39,40 @@ _SERVER_KEXINIT = build_kexinit(
 )
 
 
-def _read_kexinit(sock: socket.socket, parser: SSHStreamParser) -> None:
+# Sent by probe() only to servers that wait for the client's KEXINIT before
+# sending their own.
+_CLIENT_KEXINIT = build_kexinit(
+    kex="curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,"
+    "ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,"
+    "diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+    host_key="ssh-ed25519,ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256,ssh-rsa",
+    enc="chacha20-poly1305@openssh.com,aes128-ctr,aes256-ctr,aes128-gcm@openssh.com,"
+    "aes256-gcm@openssh.com,aes128-cbc,3des-cbc",
+    mac="hmac-sha2-256-etm@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1",
+    comp="none,zlib@openssh.com",
+)
+
+
+def _read_kexinit(sock: socket.socket, parser: SSHStreamParser, nudge: bytes | None = None) -> None:
+    """Read until the peer's KEXINIT is complete.
+
+    Nearly every implementation sends its KEXINIT right after the
+    identification string. A few wait for the other side's first: with
+    *nudge*, that packet is sent once when the peer has identified itself and
+    then stayed silent for half the socket timeout.
+    """
+    timeout = sock.gettimeout()
+    if nudge and timeout:
+        sock.settimeout(timeout / 2)
     while parser.kexinit is None:
-        data = sock.recv(65536)
+        try:
+            data = sock.recv(65536)
+        except socket.timeout:
+            if not nudge or parser.banner is None:
+                raise
+            sock.sendall(nudge)
+            nudge = None
+            continue
         if not data:
             raise NotSSH("connection closed before SSH_MSG_KEXINIT")
         parser.feed(data)
@@ -57,7 +88,7 @@ def probe(host: str, port: int = 22, timeout: float = 10.0) -> KexInitEvent:
     with socket.create_connection((host, port), timeout=timeout) as sock:
         local, remote = sock.getsockname(), sock.getpeername()
         sock.sendall(IDENTIFICATION.encode() + b"\r\n")
-        _read_kexinit(sock, parser)
+        _read_kexinit(sock, parser, _CLIENT_KEXINIT)
     assert parser.kexinit is not None
     return KexInitEvent(time.time(), remote[0], local[0], remote[1], local[1], False, parser.banner, parser.kexinit)
 

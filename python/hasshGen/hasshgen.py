@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import subprocess
 import sys
@@ -45,9 +46,12 @@ _SSH_OPTS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Batc
 # passes its system-wide crypto policy on the sshd command line from the unit
 # file, later releases include it from sshd_config.
 _PKG_SSHD = (
-    "ssh-keygen -A >/dev/null 2>&1; mkdir -p /run/sshd /var/run/sshd /var/empty/sshd; "
+    "set -f; ssh-keygen -A >/dev/null 2>&1; mkdir -p /run/sshd /var/run/sshd /var/empty/sshd; "
     # ssh-keygen -A is newer than OpenSSH 5.x, whose keys came from an init script
     "[ -s /etc/ssh/ssh_host_rsa_key ] || ssh-keygen -q -t rsa -N '' -f /etc/ssh/ssh_host_rsa_key >/dev/null 2>&1; "
+    # a profile may select another system-wide crypto policy (Fedora, RHEL 8+)
+    'if [ -n "$CRYPTO_POLICY_NAME" ]; then '
+    'update-crypto-policies --set "$CRYPTO_POLICY_NAME" >/dev/null 2>&1 || exit 1; fi; '
     "f=/etc/crypto-policies/back-ends/opensshserver.config; "
     "if grep -qs '^CRYPTO_POLICY=' $f; then . $f; fi; "
     "exec $(command -v sshd || echo /usr/sbin/sshd) -D -e -p 22 $SSHD_OPTS $CRYPTO_POLICY"
@@ -77,7 +81,7 @@ _OPENWRT_DROPBEAR = (
 RECIPES: dict[str, dict] = {
     "openssh-src": {
         "dockerfile": "Dockerfile.openssh-src",
-        "server": "exec /opt/openssh/sbin/sshd -D -e -p 22 $SSHD_OPTS",
+        "server": "set -f; exec /opt/openssh/sbin/sshd -D -e -p 22 $SSHD_OPTS",
         "client": f"/opt/openssh/bin/ssh -F /dev/null {_SSH_OPTS} -p $PORT hassh@$HOST true",
         "names": ("openssh-portable", "openssh-portable"),
     },
@@ -147,6 +151,13 @@ RECIPES: dict[str, dict] = {
         "client": _DBCLIENT,
         "names": ("dropbear", "dropbear"),
     },
+    "go-ssh": {
+        "dockerfile": "Dockerfile.go-ssh",
+        "version": "cat /xcrypto.version",
+        "server": "exec go_ssh server",
+        "client": "go_ssh client $HOST:$PORT",
+        "names": ("golang.org/x/crypto/ssh", "golang.org/x/crypto/ssh"),
+    },
     "zypper-openssh": {
         "dockerfile": "Dockerfile.rpm",
         "packages": "openssh",
@@ -183,7 +194,12 @@ def profile_opts(profile: str | None) -> str:
     """sshd command line for a hardening profile from profiles.json."""
     if not profile:
         return ""
-    return " ".join(f"-o {key}={value}" for key, value in PROFILES[profile]["options"].items())
+    return " ".join(f"-o {key}={value}" for key, value in PROFILES[profile].get("options", {}).items())
+
+
+def profile_policy(profile: str | None) -> str:
+    """System-wide crypto policy a profile switches to before sshd starts."""
+    return PROFILES[profile].get("crypto_policy", "") if profile else ""
 
 
 def cache_name(target: dict, profile: str | None = None) -> str:
@@ -230,7 +246,9 @@ def collector_client_record(port: int) -> dict | None:
 # --------------------------------------------------------------------------
 def build(target: dict, tag: str) -> None:
     recipe = RECIPES[target["recipe"]]
-    cmd = ["build", "--progress=plain", "-t", tag, "-f", str(DOCKERFILE_DIR / recipe["dockerfile"])]
+    cmd = ["build", "-t", tag, "-f", str(DOCKERFILE_DIR / recipe["dockerfile"])]
+    if os.environ.get("DOCKER_BUILDKIT") != "0":  # the legacy builder has no --progress
+        cmd.insert(1, "--progress=plain")
     cmd += platform_args(target)
     args = {"IMAGE": target["image"], "IMAGE_VER": target["image_ver"]}
     if "packages" in recipe:
@@ -261,7 +279,8 @@ def fingerprint_server(target: dict, tag: str, profile: str | None = None) -> di
     docker("rm", "-f", name, check=False)
     docker(
         "run", "-d", "--name", name, "--network", NETWORK, *platform_args(target),
-        "-e", f"SSHD_OPTS={profile_opts(profile)}", "--entrypoint", "sh", tag,
+        "-e", f"SSHD_OPTS={profile_opts(profile)}", "-e", f"CRYPTO_POLICY_NAME={profile_policy(profile)}",
+        "--entrypoint", "sh", tag,
         "-c", RECIPES[target["recipe"]]["server"],
     )  # fmt: skip
     try:
@@ -368,10 +387,13 @@ def run_target(target: dict, roles: list[str], force: bool) -> dict[str, dict]:
 # --------------------------------------------------------------------------
 # database files
 # --------------------------------------------------------------------------
-def update_db(base: Path, rows: list[dict], role: str) -> tuple[int, int]:
+def update_db(base: Path, rows: list[dict], role: str, changed_only: bool = False) -> tuple[int, int]:
     """Merge rows into <base>.json (JSON lines) and <base>.csv.
 
     Returns (rows added, total rows). Existing rows keep their position.
+    With *changed_only* a row is skipped when the database already has its
+    fingerprint for the same image and configuration: a package update that
+    did not change the algorithms adds nothing.
     """
     soft = "sshClient" if role == "client" else "sshServer"
     ident = "clientIdentificationString" if role == "client" else "serverIdentificationString"
@@ -388,7 +410,10 @@ def update_db(base: Path, rows: list[dict], role: str) -> tuple[int, int]:
                 row = json.loads(line)
                 merged[key(row)] = row
     before = len(merged)
+    have = {(key(row)[:3], key(row)[4], row[fp]) for row in merged.values()}
     for row in rows:
+        if changed_only and key(row) not in merged and (key(row)[:3], key(row)[4], row[fp]) in have:
+            continue
         merged[key(row)] = row
     with json_path.open("w", encoding="utf-8") as fh:
         for row in merged.values():
@@ -414,6 +439,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-k", "--filter", help="only targets whose name matches this regular expression")
     parser.add_argument("--force", action="store_true", help="ignore cached results in .hasshgen/")
     parser.add_argument("--no-update", action="store_true", help="do not rewrite the fingerprint databases")
+    parser.add_argument(
+        "--changed-only",
+        action="store_true",
+        help="add a row for a new package version only if its fingerprint differs",
+    )
+    parser.add_argument("--no-profiles", action="store_true", help="skip the hardening profile runs")
     parser.add_argument("--keep-images", action="store_true", help="keep the per-target images after the run")
     parser.add_argument("--list", action="store_true", help="list target names and exit")
     return parser.parse_args()
@@ -427,6 +458,8 @@ def main() -> int:
     if args.list:
         print("\n".join(slug(t) for t in targets))
         return 0
+    if args.no_profiles:
+        targets = [{k: v for k, v in t.items() if k != "profiles"} for t in targets]
     roles = ["server", "client"] if args.mode == "all" else [args.mode]
 
     # Base images that were not on this machine before the run are removed
@@ -483,7 +516,7 @@ def main() -> int:
 
     if not args.no_update:
         for role in roles:
-            added, total = update_db(CLIENT_DB if role == "client" else SERVER_DB, rows[role], role)
+            added, total = update_db(CLIENT_DB if role == "client" else SERVER_DB, rows[role], role, args.changed_only)
             print(f"[=] {role} database: {added} new, {total} total")
     if failed:
         print(f"[-] {len(failed)} target(s) failed: {', '.join(failed)}", file=sys.stderr)

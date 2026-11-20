@@ -1,0 +1,85 @@
+name: Update fingerprints
+
+# Once a week: look for new releases of everything in the fingerprint
+# database, build them, fingerprint them and open a pull request.
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-fingerprints
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install -e '.[dev]'
+
+      - name: New upstream releases and distribution releases
+        run: python hasshGen/update_targets.py --run --summary "$RUNNER_TEMP/summary.md"
+
+      # Distribution packages change under the same release: build the
+      # current ones again and keep a row only where the fingerprint moved.
+      - name: Package updates of the releases already covered
+        run: |
+          python hasshGen/hasshgen.py -k '^(apk|apt|rpm|zypper)-' --force --changed-only --no-profiles \
+            > "$RUNNER_TEMP/refresh.log" 2>&1 || true
+          tail -n 40 "$RUNNER_TEMP/refresh.log"
+
+      - name: Observed fingerprints the lab now explains
+        run: python hasshGen/harvest.py --prune
+
+      - run: ruff check . && pytest -q
+
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Nothing new this week." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          branch="auto/fingerprints-$(date -u +%Y-%m-%d)"
+          {
+            echo "Weekly check for new releases of the software in the fingerprint database."
+            echo
+            cat "$RUNNER_TEMP/summary.md" 2>/dev/null || true
+            echo "Database changes:"
+            echo
+            echo '```'
+            git diff --stat -- python/hasshGen
+            echo '```'
+            if grep -q '^\[-\]' "$RUNNER_TEMP/refresh.log"; then
+              echo
+              echo "Package targets that failed to build this time:"
+              echo
+              echo '```'
+              grep '^\[-\] [0-9]* target' "$RUNNER_TEMP/refresh.log" || true
+              echo '```'
+            fi
+          } > "$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add python/hasshGen
+          git commit -m "Fingerprints: weekly update $(date -u +%Y-%m-%d)"
+          git push --force origin "$branch"
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" \
+            --title "Fingerprints: weekly update $(date -u +%Y-%m-%d)" --body-file "$RUNNER_TEMP/body.md" \
+            || gh pr edit "$branch" --body-file "$RUNNER_TEMP/body.md" || true

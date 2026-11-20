@@ -1,0 +1,13 @@
+# golang.org/x/crypto/ssh with library defaults: what the many Go-based SSH
+# servers (Gitea, SFTPGo, honeypots, ...) present unless they configure it.
+ARG IMAGE=golang
+ARG IMAGE_VER=1.25-alpine
+FROM $IMAGE:$IMAGE_VER
+ARG VERSION
+WORKDIR /src
+COPY go_ssh.go main.go
+ENV GOTOOLCHAIN=auto CGO_ENABLED=0
+RUN go mod init hasshgen >/dev/null 2>&1 && go get golang.org/x/crypto@$VERSION >/dev/null 2>&1 \
+ && go build -o /usr/local/bin/go_ssh . \
+ && go list -m golang.org/x/crypto | awk '{print $2}' > /xcrypto.version \
+ && rm -rf /root/.cache /go/pkg
