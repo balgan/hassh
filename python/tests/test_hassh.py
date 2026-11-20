@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import socket
@@ -362,9 +363,8 @@ def test_update_targets_finds_only_newer_releases():
 
 def test_harvest_prune_and_changed_only(tmp_path):
     sys.path.insert(0, str(REPO / "python" / "hasshGen"))
-    import harvest
-
-    import hasshgen
+    harvest = importlib.import_module("harvest")
+    hasshgen = importlib.import_module("hasshgen")
 
     rows = [{c: "" for c in harvest.COLUMNS} | {"hasshServer": h, "alsoSeenAs": []} for h in ("a", "b")]
     harvest.write(tmp_path / "observed", rows)
