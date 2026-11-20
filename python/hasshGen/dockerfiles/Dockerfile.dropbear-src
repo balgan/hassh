@@ -3,11 +3,13 @@ ARG IMAGE=debian
 ARG IMAGE_VER=bookworm-slim
 FROM $IMAGE:$IMAGE_VER
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc libc6-dev make bzip2 ca-certificates curl zlib1g-dev \
+        gcc libc6-dev make bzip2 ca-certificates curl zlib1g-dev autotools-dev \
  && rm -rf /var/lib/apt/lists/*
 ARG VERSION
 RUN mkdir -p /usr/src/build && curl -fsSL https://matt.ucc.asn.au/dropbear/releases/dropbear-$VERSION.tar.bz2 | tar xj --strip-components=1 -C /usr/src/build \
  && cd /usr/src/build \
+ # releases before 2013 ship a config.guess that does not know arm64
+ && cp /usr/share/misc/config.guess /usr/share/misc/config.sub . \
  && ./configure --prefix=/opt/dropbear >/dev/null \
  && make -j"$(nproc)" PROGRAMS="dropbear dbclient dropbearkey" >/dev/null \
  && make PROGRAMS="dropbear dbclient dropbearkey" install >/dev/null \

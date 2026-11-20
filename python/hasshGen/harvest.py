@@ -139,9 +139,22 @@ def write(base: Path, rows: list[dict]) -> None:
             writer.writerow([" ".join(row[c]) if isinstance(row[c], list) else row[c] for c in COLUMNS])
 
 
+def prune(base: Path, known: set[str]) -> int:
+    """Drop observed rows whose fingerprint the lab database has since learned."""
+    path = base.with_suffix(".json")
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    kept = [row for row in rows if row["hasshServer"] not in known]
+    if len(kept) != len(rows):
+        write(base, kept)
+    return len(rows) - len(kept)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("observations", help="JSON file with banner / hassh_server / algos / ips / nets rows")
+    parser.add_argument(
+        "observations", nargs="?", help="JSON file with banner / hassh_server / algos / ips / nets rows"
+    )
+    parser.add_argument("--prune", action="store_true", help="only remove rows the lab database now covers")
     parser.add_argument("--db", default=str(HERE / "hasshserver_fingerprints.json"), help="lab database")
     parser.add_argument("--out", default=str(HERE / "hasshserver_observed"), help="output base name")
     parser.add_argument("--min-hosts", type=int, default=20, help="hosts a fingerprint needs. Default: 20")
@@ -151,10 +164,15 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="print the statistics only")
     args = parser.parse_args()
 
+    known = {json.loads(line)["hasshServer"] for line in Path(args.db).read_text().splitlines() if line.strip()}
+    if args.prune:
+        print(f"{prune(Path(args.out), known)} observed fingerprints are now in the lab database")
+        return 0
+    if not args.observations:
+        parser.error("an observations file is required unless --prune is given")
     rows = json.loads(Path(args.observations).read_text())
     if args.days:
         rows = [row for row in rows if row.get("day") in args.days.split(",")]
-    known = {json.loads(line)["hasshServer"] for line in Path(args.db).read_text().splitlines() if line.strip()}
     out, stats = harvest(rows, known, args.min_hosts, args.min_nets, args.min_share)
     if not args.dry_run:
         write(Path(args.out), out)

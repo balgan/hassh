@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import socket
@@ -56,6 +57,16 @@ def test_stream_parser_byte_by_byte_with_preamble():
     found = [k for i in range(len(data)) if (k := parser.feed(data[i : i + 1]))]
     assert len(found) == 1 and found[0].hassh_server == SERVER_HASSH
     assert parser.banner == "SSH-2.0-Test_1.0 comment"
+
+
+def test_stream_parser_skips_ignore_and_debug_before_kexinit():
+    ignore = struct.pack(">IB", 12, 6) + b"\x02" + b"\0\0\0\0" + b"\0" * 6
+    debug = struct.pack(">IB", 12, 4) + b"\x04\0" + b"\0\0\0\0" + b"x" + b"\0" * 4
+    parser = SSHStreamParser()
+    assert parser.feed(b"SSH-2.0-Test_1.0\r\n" + ignore + debug + SERVER_PKT).hassh_server == SERVER_HASSH
+    # ... but not without end
+    with pytest.raises(NotSSH):
+        SSHStreamParser().feed(b"SSH-2.0-Test_1.0\r\n" + ignore * 20 + SERVER_PKT)
 
 
 @pytest.mark.parametrize(
@@ -203,6 +214,25 @@ def test_probe_and_listen_roundtrip():
         event = probe("127.0.0.1", listener.getsockname()[1], timeout=5)
     assert not event.is_client and event.kexinit.hassh_server == SERVER_HASSH
 
+    # a server that waits for the client's KEXINIT before sending its own
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+
+        def patient():
+            c, _ = listener.accept()
+            with c:
+                c.sendall(b"SSH-2.0-Patient_1\r\n")
+                parser = SSHStreamParser()
+                while parser.kexinit is None:
+                    parser.feed(c.recv(4096))
+                c.sendall(SERVER_PKT)
+                c.recv(100)
+
+        threading.Thread(target=patient, daemon=True).start()
+        event = probe("127.0.0.1", listener.getsockname()[1], timeout=1)
+    assert event.banner == "SSH-2.0-Patient_1" and event.kexinit.hassh_server == SERVER_HASSH
+
 
 def test_database_files_are_consistent():
     """Every row's fingerprint is the MD5 of its algorithm string."""
@@ -218,6 +248,19 @@ def test_database_files_are_consistent():
         assert rows
         for row in rows:
             assert hassh_digest(row[fp + "Algorithms"]) == row[fp], row
+
+
+def test_targets_and_profiles_are_consistent():
+    gen = REPO / "python" / "hasshGen"
+    profiles = json.loads((gen / "profiles.json").read_text())
+    for name, profile in profiles.items():
+        assert profile["description"] and profile["source"].startswith("https://"), name
+        assert bool(profile.get("options")) != bool(profile.get("crypto_policy")), name
+    targets = json.loads((gen / "targets.json").read_text())
+    for target in targets:
+        assert set(target.get("profiles", [])) <= set(profiles), target
+    rows = [json.loads(line) for line in (gen / "hasshserver_fingerprints.json").read_text().splitlines()]
+    assert {row["configuration"] for row in rows if row.get("configuration")} <= set(profiles)
 
 
 def test_lab_and_observed_databases_do_not_overlap():
@@ -276,3 +319,66 @@ def test_real_capture():
     assert client.is_client and client.banner == "SSH-2.0-OpenSSH_10.0" and client.dport == 2022
     assert client.kexinit.hassh == "eeca2460550b9ded084ecf2f70a75356"
     assert not server.is_client and server.kexinit.hassh_server == "671c5858369db8e0a60108d866bbf8ec"
+
+
+def test_update_targets_finds_only_newer_releases():
+    sys.path.insert(0, str(REPO / "python" / "hasshGen"))
+    import update_targets as ut
+
+    targets = [
+        {
+            "recipe": "openssh-src",
+            "image": "debian",
+            "image_ver": "bookworm-slim",
+            "version": "9.9p2",
+            "profiles": ["x"],
+        },
+        {"recipe": "openssh-src", "image": "debian", "image_ver": "bookworm-slim", "version": "10.0p1"},
+        {"recipe": "go-ssh", "image": "golang", "image_ver": "1.24-alpine", "version": "v0.41.0"},
+        {"recipe": "apk-openssh", "image": "alpine", "image_ver": "3.9"},
+        {"recipe": "apk-openssh", "image": "alpine", "image_ver": "3.24"},
+        {"recipe": "apk-dropbear", "image": "alpine", "image_ver": "3.24"},
+        {"recipe": "apk-openssh", "image": "alpine", "image_ver": "edge"},
+        {"recipe": "apt-openssh", "image": "debian/eol", "image_ver": "stretch-slim"},
+        {"recipe": "apt-openssh", "image": "debian", "image_ver": "trixie-slim"},
+        {"recipe": "openwrt-dropbear", "image": "openwrt", "image_ver": "23.05.5", "platform": "linux/amd64"},
+        {"recipe": "openwrt-dropbear", "image": "openwrt", "image_ver": "24.10.1", "platform": "linux/amd64"},
+    ]
+    listing = "openssh-9.8p1.tar.gz openssh-10.0p1.tar.gz openssh-10.0p2.tar.gz openssh-10.1p1.tar.gz.asc"
+    new = ut.new_upstream(targets, "openssh-src", listing)
+    assert [t["version"] for t in new] == ["10.0p2", "10.1p1"] and "profiles" not in new[0]
+    assert [t["version"] for t in ut.new_upstream(targets, "go-ssh", "v0.9.0\nv0.42.0\nv0.42.0-rc.1\n")] == ["v0.42.0"]
+    tags = ["3.25", "3.25.1", "3.24", "3.8", "edge", "latest", "20260101"]
+    assert [(t["recipe"], t["image_ver"]) for t in ut.new_images(targets, "alpine", tags)] == [
+        ("apk-openssh", "3.25"),
+        ("apk-dropbear", "3.25"),
+    ]
+    tags = ["trixie-slim", "stretch-slim", "stable-slim", "duke-slim", "trixie-20260101-slim"]
+    assert [t["image_ver"] for t in ut.new_images(targets, "debian", tags)] == ["duke-slim"]
+    listing = '<a href="23.05.5/"> <a href="23.05.6/"> <a href="24.10.1/"> <a href="25.12.0/"> <a href="19.07.10/">'
+    assert [t["image_ver"] for t in ut.new_openwrt(targets, listing)] == ["23.05.6", "25.12.0"]
+    ut.insert(targets, new[0])
+    assert targets[2]["version"] == "10.0p2"
+
+
+def test_harvest_prune_and_changed_only(tmp_path):
+    sys.path.insert(0, str(REPO / "python" / "hasshGen"))
+    harvest = importlib.import_module("harvest")
+    hasshgen = importlib.import_module("hasshgen")
+
+    rows = [{c: "" for c in harvest.COLUMNS} | {"hasshServer": h, "alsoSeenAs": []} for h in ("a", "b")]
+    harvest.write(tmp_path / "observed", rows)
+    assert harvest.prune(tmp_path / "observed", {"b"}) == 1
+    assert [json.loads(line)["hasshServer"] for line in (tmp_path / "observed.json").read_text().splitlines()] == ["a"]
+
+    def row(version, fingerprint):
+        return {
+            "image": "ubuntu", "imageVersion": "24.04", "sshServer": "openssh-server", "sshServerVersion": version,
+            "serverIdentificationString": "SSH-2.0-x", "hasshServer": fingerprint, "hasshVersion": "1.0",
+            "hasshServerAlgorithms": "",
+        }  # fmt: skip
+
+    base = tmp_path / "db"
+    assert hasshgen.update_db(base, [row("1", "f1")], "server") == (1, 1)
+    assert hasshgen.update_db(base, [row("2", "f1")], "server", changed_only=True) == (0, 1)
+    assert hasshgen.update_db(base, [row("3", "f2")], "server", changed_only=True) == (1, 2)

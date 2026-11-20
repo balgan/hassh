@@ -62,7 +62,9 @@ options:
 ## Usage
 
 * Fingerprint a server without capturing anything. Only the identification
-  string is sent; no key exchange or authentication takes place:
+  string is sent (and a KEXINIT, to the rare server that waits for the
+  client's before sending its own); no key exchange or authentication takes
+  place:
 
 ```
 $ python3 hassh.py --probe test.example.org
